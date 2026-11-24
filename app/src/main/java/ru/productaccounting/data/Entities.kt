@@ -40,6 +40,8 @@ data class ReceiptItem(
     val quantity: String,
     /** Price in kopecks (or another minimum currency unit). */
     val unitPriceMinor: Long,
+    /** Total line cost in kopecks. Kept separately to avoid losing it when unit price is rounded. */
+    val totalCostMinor: Long,
 )
 
 @Entity(tableName = "menu_positions", indices = [Index(value = ["name"], unique = true)])

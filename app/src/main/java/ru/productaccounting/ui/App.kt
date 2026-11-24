@@ -63,8 +63,11 @@ import ru.productaccounting.data.MenuPosition
 import ru.productaccounting.data.PaymentMethod
 import ru.productaccounting.data.Product
 import ru.productaccounting.data.ReceiptItem
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 private data class Destination(val route: String, val title: String, val icon: ImageVector)
+private enum class ReceiptPriceSource { UNIT, TOTAL }
 
 private val destinations = listOf(
     Destination("products", "Товары", Icons.Default.Inventory2),
@@ -178,13 +181,14 @@ private fun ReceiptsScreen(vm: MainViewModel) {
             val product = products.firstOrNull { it.id == line.productId }
             ListCard(
                 product?.name ?: "Товар №${line.productId}",
-                "${line.quantity} ${product?.unit.orEmpty()} · ${formatMoney(line.unitPriceMinor)}",
+                "${line.quantity} ${product?.unit.orEmpty()} · " +
+                    "${formatMoney(line.unitPriceMinor)} за ед. · ${formatMoney(line.totalCostMinor)} всего",
             )
         }
     }
     if (showLineDialog) {
-        ReceiptLineDialog(products, onDismiss = { showLineDialog = false }) { productId, quantity, price ->
-            vm.addReceiptItem(selectedId, productId, quantity, price)
+        ReceiptLineDialog(products, onDismiss = { showLineDialog = false }) { productId, quantity, price, totalCost ->
+            vm.addReceiptItem(selectedId, productId, quantity, price, totalCost)
             showLineDialog = false
         }
     }
@@ -362,22 +366,54 @@ private fun TwoFieldDialog(title: String, firstLabel: String, secondLabel: Strin
 }
 
 @Composable
-private fun ReceiptLineDialog(products: List<Product>, onDismiss: () -> Unit, onSave: (Long, String, String) -> Unit) {
+private fun ReceiptLineDialog(
+    products: List<Product>,
+    onDismiss: () -> Unit,
+    onSave: (Long, String, String, String) -> Unit,
+) {
     var productId by remember { mutableLongStateOf(products.first().id) }
     var quantity by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
+    var totalCost by remember { mutableStateOf("") }
+    var priceSource by remember { mutableStateOf<ReceiptPriceSource?>(null) }
+
+    fun recalculate() {
+        val parsedQuantity = quantity.decimalOrNull()?.takeIf { it > BigDecimal.ZERO } ?: return
+        when (priceSource) {
+            ReceiptPriceSource.UNIT -> price.decimalOrNull()?.let {
+                totalCost = (it * parsedQuantity).moneyInput()
+            }
+            ReceiptPriceSource.TOTAL -> totalCost.decimalOrNull()?.let {
+                price = it.divide(parsedQuantity, 2, RoundingMode.HALF_UP).moneyInput()
+            }
+            null -> Unit
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Строка прихода") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceField("Товар", products, productId, { it.id }, { it.name }) { productId = it }
-            OutlinedTextField(quantity, { quantity = it }, label = { Text("Количество") }, singleLine = true)
-            OutlinedTextField(price, { price = it }, label = { Text("Цена за единицу") }, singleLine = true)
+            OutlinedTextField(quantity, { quantity = it; recalculate() }, label = { Text("Количество") }, singleLine = true)
+            OutlinedTextField(price, {
+                price = it
+                priceSource = ReceiptPriceSource.UNIT
+                recalculate()
+            }, label = { Text("Цена за единицу") }, singleLine = true)
+            OutlinedTextField(totalCost, {
+                totalCost = it
+                priceSource = ReceiptPriceSource.TOTAL
+                recalculate()
+            }, label = { Text("Общая стоимость") }, singleLine = true)
         } },
-        confirmButton = { TextButton(onClick = { onSave(productId, quantity, price) }) { Text("Добавить") } },
+        confirmButton = { TextButton(onClick = { onSave(productId, quantity, price, totalCost) }) { Text("Добавить") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }
+
+private fun String.decimalOrNull(): BigDecimal? = trim().replace(',', '.').toBigDecimalOrNull()
+
+private fun BigDecimal.moneyInput(): String = setScale(2, RoundingMode.HALF_UP).toPlainString()
 
 @Composable
 private fun IngredientDialog(products: List<Product>, onDismiss: () -> Unit, onSave: (Long, String) -> Unit) {

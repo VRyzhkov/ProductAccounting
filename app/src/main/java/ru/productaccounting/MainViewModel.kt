@@ -62,15 +62,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dao.insertReceiptDocument(ReceiptDocument(date = LocalDate.now().toString()))
     }
 
-    fun addReceiptItem(documentId: Long, productId: Long, quantity: String, price: String) =
+    fun addReceiptItem(
+        documentId: Long,
+        productId: Long,
+        quantity: String,
+        price: String,
+        totalCost: String,
+    ) =
         launchAction("Приход добавлен") {
             val normalizedQuantity = positiveDecimal(quantity)
-            val priceMinor = parseMoney(price)
+            require(price.isNotBlank() || totalCost.isNotBlank()) {
+                "Укажите цену за единицу или общую стоимость"
+            }
+            val quantityDecimal = normalizedQuantity.toBigDecimal()
+            val priceMinor = if (price.isNotBlank()) {
+                parseMoney(price, "цену")
+            } else {
+                divideMoney(parseMoney(totalCost, "общую стоимость"), quantityDecimal)
+            }
+            val totalCostMinor = if (totalCost.isNotBlank()) {
+                parseMoney(totalCost, "общую стоимость")
+            } else {
+                multiplyMoney(priceMinor, quantityDecimal)
+            }
             dao.insertReceiptItem(ReceiptItem(
                 documentId = documentId,
                 productId = productId,
                 quantity = normalizedQuantity,
                 unitPriceMinor = priceMinor,
+                totalCostMinor = totalCostMinor,
             ))
         }
 
@@ -103,10 +123,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return parsed.stripTrailingZeros().toPlainString()
     }
 
-    private fun parseMoney(value: String): Long {
+    private fun parseMoney(value: String, fieldName: String): Long {
         val parsed = value.trim().replace(',', '.').toBigDecimalOrNull()
-            ?: error("Введите корректную цену")
-        require(parsed >= BigDecimal.ZERO) { "Цена не может быть отрицательной" }
+            ?: error("Введите корректную $fieldName")
+        require(parsed >= BigDecimal.ZERO) { "Стоимость не может быть отрицательной" }
         return parsed.setScale(2, RoundingMode.HALF_UP).movePointRight(2).longValueExact()
     }
+
+    private fun divideMoney(totalMinor: Long, quantity: BigDecimal): Long =
+        BigDecimal.valueOf(totalMinor).divide(quantity, 0, RoundingMode.HALF_UP).longValueExact()
+
+    private fun multiplyMoney(unitPriceMinor: Long, quantity: BigDecimal): Long =
+        BigDecimal.valueOf(unitPriceMinor).multiply(quantity).setScale(0, RoundingMode.HALF_UP).longValueExact()
 }

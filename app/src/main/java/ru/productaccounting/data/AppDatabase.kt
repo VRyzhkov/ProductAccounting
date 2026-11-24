@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -17,7 +19,7 @@ import androidx.room.RoomDatabase
         ExpenseItem::class,
         ExpenseAllocation::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,6 +30,18 @@ abstract class AppDatabase : RoomDatabase() {
             context,
             AppDatabase::class.java,
             "product-accounting.db",
-        ).build()
+        ).addMigrations(MIGRATION_1_2).build()
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE receipt_items ADD COLUMN totalCostMinor INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "UPDATE receipt_items SET totalCostMinor = " +
+                        "CAST(ROUND(unitPriceMinor * CAST(quantity AS REAL)) AS INTEGER)"
+                )
+            }
+        }
     }
 }
