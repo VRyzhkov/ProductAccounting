@@ -53,6 +53,40 @@ abstract class AppDao {
     @Insert
     abstract suspend fun insertReceiptItem(item: ReceiptItem): Long
 
+    @Query("SELECT * FROM receipt_items WHERE id = :id")
+    abstract suspend fun getReceiptItem(id: Long): ReceiptItem
+
+    @Query("SELECT CAST(TOTAL(quantity) AS TEXT) FROM expense_allocations WHERE receiptItemId = :receiptItemId")
+    abstract suspend fun getAllocatedQuantity(receiptItemId: Long): String?
+
+    @Query("UPDATE receipt_items SET productId = :productId, quantity = :quantity, unitPriceMinor = :unitPriceMinor, totalCostMinor = :totalCostMinor WHERE id = :id")
+    abstract suspend fun updateReceiptItemValues(
+        id: Long,
+        productId: Long,
+        quantity: String,
+        unitPriceMinor: Long,
+        totalCostMinor: Long,
+    )
+
+    @Transaction
+    open suspend fun updateReceiptItem(item: ReceiptItem) {
+        val oldItem = getReceiptItem(item.id)
+        val allocated = getAllocatedQuantity(item.id).decimalOrZero()
+        require(oldItem.productId == item.productId || allocated == BigDecimal.ZERO) {
+            "Нельзя изменить товар: часть этой партии уже списана"
+        }
+        require(item.quantity.decimal() >= allocated) {
+            "Количество не может быть меньше уже списанного: $allocated"
+        }
+        updateReceiptItemValues(
+            item.id,
+            item.productId,
+            item.quantity,
+            item.unitPriceMinor,
+            item.totalCostMinor,
+        )
+    }
+
     @Query("SELECT * FROM receipt_items WHERE documentId = :documentId ORDER BY id")
     abstract fun observeReceiptItems(documentId: Long): Flow<List<ReceiptItem>>
 
@@ -68,6 +102,12 @@ abstract class AppDao {
 
     @Insert
     abstract suspend fun insertExpenseItem(item: ExpenseItem): Long
+
+    @Query("UPDATE expense_items SET menuPositionId = :menuPositionId, quantity = :quantity, paymentMethodId = :paymentMethodId WHERE id = :id")
+    abstract suspend fun updateExpenseItemValues(id: Long, menuPositionId: Long, quantity: String, paymentMethodId: Long)
+
+    @Query("DELETE FROM expense_allocations WHERE expenseItemId = :expenseItemId")
+    abstract suspend fun deleteAllocations(expenseItemId: Long)
 
     @Insert
     abstract suspend fun insertAllocation(allocation: ExpenseAllocation)
@@ -87,6 +127,17 @@ abstract class AppDao {
 
     @Transaction
     open suspend fun addExpenseWithFifo(item: ExpenseItem): Long {
+        return allocateExpense(item, insertExpenseItem(item))
+    }
+
+    @Transaction
+    open suspend fun updateExpenseWithFifo(item: ExpenseItem) {
+        deleteAllocations(item.id)
+        updateExpenseItemValues(item.id, item.menuPositionId, item.quantity, item.paymentMethodId)
+        allocateExpense(item, item.id)
+    }
+
+    private suspend fun allocateExpense(item: ExpenseItem, expenseId: Long): Long {
         val ingredients = getIngredients(item.menuPositionId)
         require(ingredients.isNotEmpty()) { "У позиции меню не задан состав" }
         val multiplier = item.quantity.decimal()
@@ -98,7 +149,6 @@ abstract class AppDao {
             require(available >= required) { "Недостаточно товара №$productId: требуется $required, доступно $available" }
         }
 
-        val expenseId = insertExpenseItem(item)
         requirements.forEach { (productId, required) ->
             var remaining = required
             for (batch in getBatches(productId)) {

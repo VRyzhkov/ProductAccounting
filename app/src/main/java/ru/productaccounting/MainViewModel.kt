@@ -18,7 +18,7 @@ import ru.productaccounting.data.ReceiptDocument
 import ru.productaccounting.data.ReceiptItem
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.LocalDate
+import java.time.LocalDateTime
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val dao = (application as ProductAccountingApplication).database.appDao()
@@ -64,8 +64,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dao.upsertIngredient(MenuIngredient(menuId, productId, normalized))
     }
 
-    fun createReceiptDocument() = launchAction("Вкладка прихода создана") {
-        dao.insertReceiptDocument(ReceiptDocument(date = LocalDate.now().toString()))
+    fun createReceiptDocument() = launchAction("Дата прихода создана") {
+        dao.insertReceiptDocument(ReceiptDocument(date = LocalDateTime.now().toString()))
     }
 
     fun addReceiptItem(
@@ -100,8 +100,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ))
         }
 
-    fun createExpenseDocument() = launchAction("Вкладка расхода создана") {
-        dao.insertExpenseDocument(ExpenseDocument(date = LocalDate.now().toString()))
+    fun updateReceiptItem(
+        itemId: Long,
+        documentId: Long,
+        productId: Long,
+        quantity: String,
+        price: String,
+        totalCost: String,
+    ) = launchAction("Запись прихода обновлена") {
+        dao.updateReceiptItem(receiptItem(itemId, documentId, productId, quantity, price, totalCost))
+    }
+
+    fun createExpenseDocument() = launchAction("Дата расхода создана") {
+        dao.insertExpenseDocument(ExpenseDocument(date = LocalDateTime.now().toString()))
     }
 
     fun addExpenseItem(documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long) =
@@ -113,6 +124,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 paymentMethodId = paymentMethodId,
             ))
         }
+
+    fun updateExpenseItem(itemId: Long, documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long) =
+        launchAction("Запись расхода обновлена") {
+            dao.updateExpenseWithFifo(ExpenseItem(
+                id = itemId,
+                documentId = documentId,
+                menuPositionId = menuId,
+                quantity = positiveDecimal(quantity),
+                paymentMethodId = paymentMethodId,
+            ))
+        }
+
+    private fun receiptItem(
+        id: Long,
+        documentId: Long,
+        productId: Long,
+        quantity: String,
+        price: String,
+        totalCost: String,
+    ): ReceiptItem {
+        val normalizedQuantity = positiveDecimal(quantity)
+        require(price.isNotBlank() || totalCost.isNotBlank()) {
+            "Укажите цену за единицу или общую стоимость"
+        }
+        val quantityDecimal = normalizedQuantity.toBigDecimal()
+        val priceMinor = if (price.isNotBlank()) parseMoney(price, "цену")
+            else divideMoney(parseMoney(totalCost, "общую стоимость"), quantityDecimal)
+        val totalCostMinor = if (totalCost.isNotBlank()) parseMoney(totalCost, "общую стоимость")
+            else multiplyMoney(priceMinor, quantityDecimal)
+        return ReceiptItem(id, documentId, productId, normalizedQuantity, priceMinor, totalCostMinor)
+    }
 
     private fun launchAction(success: String, block: suspend () -> Unit) {
         viewModelScope.launch {

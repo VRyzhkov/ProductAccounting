@@ -65,6 +65,9 @@ import ru.productaccounting.data.Product
 import ru.productaccounting.data.ReceiptItem
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 private data class Destination(val route: String, val title: String, val icon: ImageVector)
 private enum class ReceiptPriceSource { UNIT, TOTAL }
@@ -182,17 +185,18 @@ private fun ReceiptsScreen(vm: MainViewModel) {
     val products by vm.products.collectAsStateWithLifecycle()
     var selectedId by remember { mutableLongStateOf(0) }
     var showLineDialog by remember { mutableStateOf(false) }
+    var editedLine by remember { mutableStateOf<ReceiptItem?>(null) }
     val linesFlow = remember(selectedId) { if (selectedId == 0L) flowOf(emptyList()) else vm.receiptItems(selectedId) }
     val lines by linesFlow.collectAsStateWithLifecycle(emptyList())
 
     DocumentScreen(
-        emptyText = "Создайте вкладку прихода. Дата зафиксируется автоматически.",
+        emptyText = "Добавьте первую дату прихода.",
         documents = documents.map { Triple(it.id, it.date, it.itemCount) },
         selectedId = selectedId,
-        onSelect = { selectedId = it },
+        onSelect = { selectedId = if (selectedId == it) 0 else it },
         onCreate = vm::createReceiptDocument,
         addEnabled = selectedId != 0L && products.isNotEmpty(),
-        onAddLine = { showLineDialog = true },
+        onAddLine = { editedLine = null; showLineDialog = true },
     ) {
         lines.forEach { line ->
             val product = products.firstOrNull { it.id == line.productId }
@@ -200,12 +204,14 @@ private fun ReceiptsScreen(vm: MainViewModel) {
                 product?.name ?: "Товар №${line.productId}",
                 "${line.quantity} ${product?.unit.orEmpty()} · " +
                     "${formatMoney(line.unitPriceMinor)} за ед. · ${formatMoney(line.totalCostMinor)} всего",
-            )
+            ) { editedLine = line; showLineDialog = true }
         }
     }
     if (showLineDialog) {
-        ReceiptLineDialog(products, onDismiss = { showLineDialog = false }) { productId, quantity, price, totalCost ->
-            vm.addReceiptItem(selectedId, productId, quantity, price, totalCost)
+        val line = editedLine
+        ReceiptLineDialog(products, line, onDismiss = { showLineDialog = false }) { productId, quantity, price, totalCost ->
+            if (line == null) vm.addReceiptItem(selectedId, productId, quantity, price, totalCost)
+            else vm.updateReceiptItem(line.id, line.documentId, productId, quantity, price, totalCost)
             showLineDialog = false
         }
     }
@@ -262,27 +268,30 @@ private fun ExpensesScreen(vm: MainViewModel) {
     val methods by vm.paymentMethods.collectAsStateWithLifecycle()
     var selectedId by remember { mutableLongStateOf(0) }
     var showLineDialog by remember { mutableStateOf(false) }
+    var editedLine by remember { mutableStateOf<ExpenseItem?>(null) }
     val linesFlow = remember(selectedId) { if (selectedId == 0L) flowOf(emptyList()) else vm.expenseItems(selectedId) }
     val lines by linesFlow.collectAsStateWithLifecycle(emptyList())
 
     DocumentScreen(
-        emptyText = "Создайте вкладку расхода. Дата зафиксируется автоматически.",
+        emptyText = "Добавьте первую дату расхода.",
         documents = documents.map { Triple(it.id, it.date, it.itemCount) },
         selectedId = selectedId,
-        onSelect = { selectedId = it },
+        onSelect = { selectedId = if (selectedId == it) 0 else it },
         onCreate = vm::createExpenseDocument,
         addEnabled = selectedId != 0L && positions.isNotEmpty() && methods.isNotEmpty(),
-        onAddLine = { showLineDialog = true },
+        onAddLine = { editedLine = null; showLineDialog = true },
     ) {
         lines.forEach { line ->
             val menu = positions.firstOrNull { it.id == line.menuPositionId }?.name ?: "Позиция №${line.menuPositionId}"
             val payment = methods.firstOrNull { it.id == line.paymentMethodId }?.name ?: "Оплата №${line.paymentMethodId}"
-            ListCard(menu, "Количество: ${line.quantity} · $payment")
+            ListCard(menu, "Количество: ${line.quantity} · $payment") { editedLine = line; showLineDialog = true }
         }
     }
     if (showLineDialog) {
-        ExpenseLineDialog(positions, methods, onDismiss = { showLineDialog = false }) { menuId, quantity, paymentId ->
-            vm.addExpenseItem(selectedId, menuId, quantity, paymentId)
+        val line = editedLine
+        ExpenseLineDialog(positions, methods, line, onDismiss = { showLineDialog = false }) { menuId, quantity, paymentId ->
+            if (line == null) vm.addExpenseItem(selectedId, menuId, quantity, paymentId)
+            else vm.updateExpenseItem(line.id, line.documentId, menuId, quantity, paymentId)
             showLineDialog = false
         }
     }
@@ -318,22 +327,31 @@ private fun DocumentScreen(
     onAddLine: () -> Unit,
     lines: @Composable () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ExtendedFloatingActionButton(onClick = onCreate, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Новая вкладка") })
-            Button(enabled = addEnabled, onClick = onAddLine) { Text("Добавить строку") }
-        }
-        Spacer(Modifier.height(12.dp))
-        if (documents.isEmpty()) Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-            items(documents, key = { "doc-${it.first}" }) { document ->
-                SelectableCard("${document.second} · вкладка №${document.first}", document.first == selectedId, "Строк: ${document.third}") {
-                    onSelect(document.first)
+    Scaffold(
+        floatingActionButton = {
+            if (selectedId == 0L || addEnabled) {
+                FloatingActionButton(onClick = if (selectedId == 0L) onCreate else onAddLine) {
+                    Icon(Icons.Default.Add, if (selectedId == 0L) "Добавить дату" else "Добавить запись")
                 }
             }
-            if (selectedId != 0L) {
-                item { Text("Содержимое вкладки", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
-                item { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { lines() } }
+        },
+    ) { padding ->
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp),
+        ) {
+            if (documents.isEmpty()) item { Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            items(documents, key = { "doc-${it.first}" }) { document ->
+                SelectableCard(formatDocumentDate(document.second), document.first == selectedId) {
+                    onSelect(document.first)
+                }
+                if (document.first == selectedId) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(start = 12.dp, top = 8.dp),
+                    ) { lines() }
+                }
             }
         }
     }
@@ -399,14 +417,17 @@ private fun TwoFieldDialog(
 @Composable
 private fun ReceiptLineDialog(
     products: List<Product>,
+    initial: ReceiptItem? = null,
     onDismiss: () -> Unit,
     onSave: (Long, String, String, String) -> Unit,
 ) {
-    var productId by remember { mutableLongStateOf(products.first().id) }
-    var quantity by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf("") }
-    var totalCost by remember { mutableStateOf("") }
-    var priceSource by remember { mutableStateOf<ReceiptPriceSource?>(null) }
+    var productId by remember(initial) { mutableLongStateOf(initial?.productId ?: products.first().id) }
+    var quantity by remember(initial) { mutableStateOf(initial?.quantity.orEmpty()) }
+    var price by remember(initial) { mutableStateOf(initial?.unitPriceMinor?.moneyInput().orEmpty()) }
+    var totalCost by remember(initial) { mutableStateOf(initial?.totalCostMinor?.moneyInput().orEmpty()) }
+    var priceSource by remember(initial) {
+        mutableStateOf<ReceiptPriceSource?>(if (initial == null) null else ReceiptPriceSource.UNIT)
+    }
 
     fun recalculate() {
         val parsedQuantity = quantity.decimalOrNull()?.takeIf { it > BigDecimal.ZERO } ?: return
@@ -422,7 +443,7 @@ private fun ReceiptLineDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Строка прихода") },
+        title = { Text(if (initial == null) "Новая запись прихода" else "Редактирование прихода") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceField("Товар", products, productId, { it.id }, { it.name }) { productId = it }
             OutlinedTextField(quantity, { quantity = it; recalculate() }, label = { Text("Количество") }, singleLine = true)
@@ -437,7 +458,7 @@ private fun ReceiptLineDialog(
                 recalculate()
             }, label = { Text("Общая стоимость") }, singleLine = true)
         } },
-        confirmButton = { TextButton(onClick = { onSave(productId, quantity, price, totalCost) }) { Text("Добавить") } },
+        confirmButton = { TextButton(onClick = { onSave(productId, quantity, price, totalCost) }) { Text("Сохранить") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }
@@ -463,19 +484,19 @@ private fun IngredientDialog(products: List<Product>, onDismiss: () -> Unit, onS
 }
 
 @Composable
-private fun ExpenseLineDialog(positions: List<MenuPosition>, methods: List<PaymentMethod>, onDismiss: () -> Unit, onSave: (Long, String, Long) -> Unit) {
-    var menuId by remember { mutableLongStateOf(positions.first().id) }
-    var paymentId by remember { mutableLongStateOf(methods.first().id) }
-    var quantity by remember { mutableStateOf("") }
+private fun ExpenseLineDialog(positions: List<MenuPosition>, methods: List<PaymentMethod>, initial: ExpenseItem? = null, onDismiss: () -> Unit, onSave: (Long, String, Long) -> Unit) {
+    var menuId by remember(initial) { mutableLongStateOf(initial?.menuPositionId ?: positions.first().id) }
+    var paymentId by remember(initial) { mutableLongStateOf(initial?.paymentMethodId ?: methods.first().id) }
+    var quantity by remember(initial) { mutableStateOf(initial?.quantity.orEmpty()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Строка расхода") },
+        title = { Text(if (initial == null) "Новая запись расхода" else "Редактирование расхода") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceField("Позиция меню", positions, menuId, { it.id }, { it.name }) { menuId = it }
             OutlinedTextField(quantity, { quantity = it }, label = { Text("Количество") }, singleLine = true)
             ChoiceField("Способ оплаты", methods, paymentId, { it.id }, { it.name }) { paymentId = it }
         } },
-        confirmButton = { TextButton(onClick = { onSave(menuId, quantity, paymentId) }) { Text("Провести") } },
+        confirmButton = { TextButton(onClick = { onSave(menuId, quantity, paymentId) }) { Text("Сохранить") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }
@@ -497,3 +518,11 @@ private fun <T> ChoiceField(label: String, values: List<T>, selectedId: Long, id
 }
 
 private fun formatMoney(value: Long): String = "%d,%02d ₽".format(value / 100, value % 100)
+
+private fun Long.moneyInput(): String = BigDecimal.valueOf(this, 2).moneyInput()
+
+private fun formatDocumentDate(value: String): String = runCatching {
+    LocalDateTime.parse(value).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
+}.recoverCatching {
+    LocalDate.parse(value).atStartOfDay().format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
+}.getOrDefault(value)
