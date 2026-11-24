@@ -43,6 +43,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dao.insertProduct(Product(name = name.trim(), unit = unit.trim()))
     }
 
+    fun updateProduct(id: Long, name: String, unit: String) = launchAction("Товар обновлён") {
+        require(name.isNotBlank()) { "Укажите название товара" }
+        require(unit.isNotBlank()) { "Укажите единицу измерения" }
+        dao.updateProduct(id, name.trim(), unit.trim())
+    }
+
     fun addPaymentMethod(name: String) = launchAction("Способ оплаты добавлен") {
         require(name.isNotBlank()) { "Укажите название способа оплаты" }
         dao.insertPaymentMethod(PaymentMethod(name = name.trim()))

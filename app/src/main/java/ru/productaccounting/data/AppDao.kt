@@ -16,6 +16,9 @@ abstract class AppDao {
     @Insert
     abstract suspend fun insertProduct(product: Product): Long
 
+    @Query("UPDATE products SET name = :name, unit = :unit WHERE id = :id")
+    abstract suspend fun updateProduct(id: Long, name: String, unit: String)
+
     @Query("SELECT * FROM payment_methods ORDER BY id")
     abstract fun observePaymentMethods(): Flow<List<PaymentMethod>>
 

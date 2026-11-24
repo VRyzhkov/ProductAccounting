@@ -125,17 +125,34 @@ fun ProductAccountingApp(viewModel: MainViewModel) {
 private fun ProductsScreen(vm: MainViewModel) {
     val products by vm.products.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
+    var editedProduct by remember { mutableStateOf<Product?>(null) }
     EntityList(
-        emptyText = "Добавьте первый товар",
-        floatingAction = { FloatingActionButton(onClick = { showDialog = true }) { Icon(Icons.Default.Add, "Добавить") } },
+        emptyText = null,
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        floatingAction = { FloatingActionButton(onClick = {
+            editedProduct = null
+            showDialog = true
+        }) { Icon(Icons.Default.Add, "Добавить") } },
     ) {
-        items(products, key = { it.id }) { product ->
-            ListCard("№${product.id}  ${product.name}", "Единица измерения: ${product.unit}")
+        val sortedProducts = products.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        items(sortedProducts, key = { it.id }) { product ->
+            ListCard(product.name, "Единица измерения: ${product.unit}") {
+                editedProduct = product
+                showDialog = true
+            }
         }
     }
     if (showDialog) {
-        TwoFieldDialog("Новый товар", "Название", "Единица измерения", onDismiss = { showDialog = false }) { name, unit ->
-            vm.addProduct(name, unit)
+        val product = editedProduct
+        TwoFieldDialog(
+            title = if (product == null) "Новый товар" else "Редактирование товара",
+            firstLabel = "Название",
+            secondLabel = "Единица измерения",
+            initialFirst = product?.name.orEmpty(),
+            initialSecond = product?.unit.orEmpty(),
+            onDismiss = { showDialog = false },
+        ) { name, unit ->
+            if (product == null) vm.addProduct(name, unit) else vm.updateProduct(product.id, name, unit)
             showDialog = false
         }
     }
@@ -272,14 +289,19 @@ private fun ExpensesScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun EntityList(emptyText: String, floatingAction: @Composable () -> Unit, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+private fun EntityList(
+    emptyText: String?,
+    floatingAction: @Composable () -> Unit,
+    contentPadding: PaddingValues = PaddingValues(16.dp),
+    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+) {
     Scaffold(floatingActionButton = floatingAction) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (emptyText != null) item { Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             content()
         }
     }
@@ -318,8 +340,9 @@ private fun DocumentScreen(
 }
 
 @Composable
-private fun ListCard(title: String, subtitle: String? = null) {
-    Card(Modifier.fillMaxWidth()) {
+private fun ListCard(title: String, subtitle: String? = null, onClick: (() -> Unit)? = null) {
+    val modifier = if (onClick == null) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().clickable(onClick = onClick)
+    Card(modifier) {
         Column(Modifier.padding(16.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             if (subtitle != null) Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -350,9 +373,17 @@ private fun OneFieldDialog(title: String, label: String, onDismiss: () -> Unit, 
 }
 
 @Composable
-private fun TwoFieldDialog(title: String, firstLabel: String, secondLabel: String, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
-    var first by remember { mutableStateOf("") }
-    var second by remember { mutableStateOf("") }
+private fun TwoFieldDialog(
+    title: String,
+    firstLabel: String,
+    secondLabel: String,
+    onDismiss: () -> Unit,
+    initialFirst: String = "",
+    initialSecond: String = "",
+    onSave: (String, String) -> Unit,
+) {
+    var first by remember(initialFirst) { mutableStateOf(initialFirst) }
+    var second by remember(initialSecond) { mutableStateOf(initialSecond) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
