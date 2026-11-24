@@ -224,40 +224,84 @@ private fun MenuScreen(vm: MainViewModel) {
     var selectedId by remember { mutableLongStateOf(0) }
     var showPositionDialog by remember { mutableStateOf(false) }
     var showIngredientDialog by remember { mutableStateOf(false) }
+    var editedPosition by remember { mutableStateOf<MenuPosition?>(null) }
+    var positionToDelete by remember { mutableStateOf<MenuPosition?>(null) }
     val ingredientFlow = remember(selectedId) { if (selectedId == 0L) flowOf(emptyList()) else vm.ingredients(selectedId) }
     val ingredients by ingredientFlow.collectAsStateWithLifecycle(emptyList())
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { showPositionDialog = true }) { Icon(Icons.Default.Add, null); Text(" Позиция") }
-            Button(
-                enabled = selectedId != 0L && products.isNotEmpty(),
-                onClick = { showIngredientDialog = true },
-            ) { Text("Добавить товар") }
-        }
-        Spacer(Modifier.height(12.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-            items(positions, key = { "menu-${it.id}" }) { position ->
-                SelectableCard("№${position.id}  ${position.name}", position.id == selectedId) { selectedId = position.id }
+    Scaffold(
+        floatingActionButton = {
+            if (selectedId == 0L || products.isNotEmpty()) {
+                FloatingActionButton(onClick = {
+                    if (selectedId == 0L) {
+                        editedPosition = null
+                        showPositionDialog = true
+                    } else {
+                        showIngredientDialog = true
+                    }
+                }) { Icon(Icons.Default.Add, if (selectedId == 0L) "Добавить позицию" else "Добавить товар") }
             }
-            if (selectedId != 0L) {
-                item { Text("Состав", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
-                items(ingredients, key = { "ingredient-${it.productId}" }) { ingredient ->
-                    val product = products.firstOrNull { it.id == ingredient.productId }
-                    ListCard(product?.name ?: "Товар №${ingredient.productId}", "${ingredient.quantity} ${product?.unit.orEmpty()}")
+        },
+    ) { padding ->
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp),
+        ) {
+            val sortedPositions = positions.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            items(sortedPositions, key = { "menu-${it.id}" }) { position ->
+                MenuPositionCard(
+                    position = position,
+                    expanded = position.id == selectedId,
+                    onToggle = { selectedId = if (selectedId == position.id) 0 else position.id },
+                    onEdit = { editedPosition = position; showPositionDialog = true },
+                    onDelete = { positionToDelete = position },
+                )
+                if (position.id == selectedId) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(start = 12.dp, top = 8.dp),
+                    ) {
+                        ingredients.forEach { ingredient ->
+                            val product = products.firstOrNull { it.id == ingredient.productId }
+                            ListCard(product?.name ?: "Товар №${ingredient.productId}", "${ingredient.quantity} ${product?.unit.orEmpty()}")
+                        }
+                    }
                 }
             }
         }
     }
     if (showPositionDialog) {
-        OneFieldDialog("Новая позиция меню", "Название", onDismiss = { showPositionDialog = false }) {
-            vm.addMenuPosition(it); showPositionDialog = false
+        val position = editedPosition
+        OneFieldDialog(
+            title = if (position == null) "Новая позиция меню" else "Изменение позиции",
+            label = "Название",
+            initialValue = position?.name.orEmpty(),
+            onDismiss = { showPositionDialog = false },
+        ) {
+            if (position == null) vm.addMenuPosition(it) else vm.updateMenuPosition(position.id, it)
+            showPositionDialog = false
         }
     }
     if (showIngredientDialog) {
         IngredientDialog(products, onDismiss = { showIngredientDialog = false }) { productId, quantity ->
             vm.setIngredient(selectedId, productId, quantity); showIngredientDialog = false
         }
+    }
+    positionToDelete?.let { position ->
+        AlertDialog(
+            onDismissRequest = { positionToDelete = null },
+            title = { Text("Удалить позицию?") },
+            text = { Text("Позиция «${position.name}» и её состав будут удалены.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.deleteMenuPosition(position.id)
+                    if (selectedId == position.id) selectedId = 0
+                    positionToDelete = null
+                }) { Text("Удалить") }
+            },
+            dismissButton = { TextButton(onClick = { positionToDelete = null }) { Text("Отмена") } },
+        )
     }
 }
 
@@ -379,8 +423,37 @@ private fun SelectableCard(title: String, selected: Boolean, subtitle: String? =
 }
 
 @Composable
-private fun OneFieldDialog(title: String, label: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var value by remember { mutableStateOf("") }
+private fun MenuPositionCard(
+    position: MenuPosition,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onToggle)) {
+        Column(Modifier.padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)) {
+            Text(
+                position.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onEdit) { Text("Изменить") }
+                TextButton(onClick = onDelete) { Text("Удалить") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OneFieldDialog(
+    title: String,
+    label: String,
+    onDismiss: () -> Unit,
+    initialValue: String = "",
+    onSave: (String) -> Unit,
+) {
+    var value by remember(initialValue) { mutableStateOf(initialValue) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },

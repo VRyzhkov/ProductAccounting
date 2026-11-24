@@ -31,6 +31,23 @@ abstract class AppDao {
     @Insert
     abstract suspend fun insertMenuPosition(position: MenuPosition): Long
 
+    @Query("UPDATE menu_positions SET name = :name WHERE id = :id")
+    abstract suspend fun updateMenuPosition(id: Long, name: String)
+
+    @Query("SELECT COUNT(*) FROM expense_items WHERE menuPositionId = :id")
+    abstract suspend fun countExpensesForMenuPosition(id: Long): Int
+
+    @Query("DELETE FROM menu_positions WHERE id = :id")
+    abstract suspend fun deleteMenuPositionRow(id: Long)
+
+    @Transaction
+    open suspend fun deleteMenuPosition(id: Long) {
+        require(countExpensesForMenuPosition(id) == 0) {
+            "Нельзя удалить позицию, которая уже используется в расходах"
+        }
+        deleteMenuPositionRow(id)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsertIngredient(ingredient: MenuIngredient)
 

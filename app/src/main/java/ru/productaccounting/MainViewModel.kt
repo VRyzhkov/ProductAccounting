@@ -59,6 +59,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dao.insertMenuPosition(MenuPosition(name = name.trim()))
     }
 
+    fun updateMenuPosition(id: Long, name: String) = launchAction("Позиция меню обновлена") {
+        require(name.isNotBlank()) { "Укажите название позиции меню" }
+        dao.updateMenuPosition(id, name.trim())
+    }
+
+    fun deleteMenuPosition(id: Long) = launchAction("Позиция меню удалена") {
+        dao.deleteMenuPosition(id)
+    }
+
     fun setIngredient(menuId: Long, productId: Long, quantity: String) = launchAction("Состав сохранён") {
         val normalized = positiveDecimal(quantity)
         dao.upsertIngredient(MenuIngredient(menuId, productId, normalized))
