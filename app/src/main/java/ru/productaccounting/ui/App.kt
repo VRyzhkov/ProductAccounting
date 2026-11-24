@@ -169,7 +169,8 @@ private fun PaymentsScreen(vm: MainViewModel) {
         emptyText = "Добавьте первый способ оплаты",
         floatingAction = { FloatingActionButton(onClick = { showDialog = true }) { Icon(Icons.Default.Add, "Добавить") } },
     ) {
-        items(methods, key = { it.id }) { method -> ListCard("№${method.id}  ${method.name}") }
+        val sortedMethods = methods.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        items(sortedMethods, key = { it.id }) { method -> ListCard(method.name) }
     }
     if (showDialog) {
         OneFieldDialog("Новый способ оплаты", "Название", onDismiss = { showDialog = false }) {
