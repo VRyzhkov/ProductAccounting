@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NorthEast
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -388,13 +389,15 @@ private fun MenuScreen(vm: MainViewModel) {
     }
     if (showPositionDialog) {
         val position = editedPosition
-        OneFieldDialog(
+        TwoFieldDialog(
             title = if (position == null) "Новая позиция меню" else "Изменение позиции",
-            label = "Название",
-            initialValue = position?.name.orEmpty(),
+            firstLabel = "Название",
+            secondLabel = "Стоимость, ₽",
+            initialFirst = position?.name.orEmpty(),
+            initialSecond = position?.price?.toString().orEmpty(),
             onDismiss = { showPositionDialog = false },
-        ) {
-            if (position == null) vm.addMenuPosition(it) else vm.updateMenuPosition(position.id, it)
+        ) { name, price ->
+            if (position == null) vm.addMenuPosition(name, price) else vm.updateMenuPosition(position.id, name, price)
             showPositionDialog = false
         }
     }
@@ -428,6 +431,11 @@ private fun ExpensesScreen(vm: MainViewModel) {
     var selectedId by remember { mutableLongStateOf(0) }
     var showLineDialog by remember { mutableStateOf(false) }
     var editedLine by remember { mutableStateOf<ExpenseItem?>(null) }
+    var reportDocumentId by remember { mutableLongStateOf(0) }
+    val reportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null && reportDocumentId != 0L) vm.writeExpenseReport(uri, reportDocumentId)
+        reportDocumentId = 0
+    }
     val linesFlow = remember(selectedId) { if (selectedId == 0L) flowOf(emptyList()) else vm.expenseItems(selectedId) }
     val lines by linesFlow.collectAsStateWithLifecycle(emptyList())
 
@@ -439,6 +447,10 @@ private fun ExpensesScreen(vm: MainViewModel) {
         onCreate = vm::createExpenseDocument,
         addEnabled = selectedId != 0L && positions.isNotEmpty() && methods.isNotEmpty(),
         onAddLine = { editedLine = null; showLineDialog = true },
+        onReport = { documentId ->
+            reportDocumentId = documentId
+            reportLauncher.launch("expense-report.pdf")
+        },
     ) {
         lines.forEach { line ->
             val menu = positions.firstOrNull { it.id == line.menuPositionId }?.name ?: "Позиция №${line.menuPositionId}"
@@ -486,6 +498,7 @@ private fun DocumentScreen(
     onCreate: () -> Unit,
     addEnabled: Boolean,
     onAddLine: () -> Unit,
+    onReport: ((Long) -> Unit)? = null,
     lines: @Composable () -> Unit,
 ) {
     Scaffold(
@@ -504,7 +517,18 @@ private fun DocumentScreen(
         ) {
             if (documents.isEmpty()) item { Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             items(documents, key = { "doc-${it.first}" }) { document ->
-                SelectableCard(formatDocumentDate(document.second), document.first == selectedId) {
+                val reportAction: (@Composable () -> Unit)? = onReport?.let { report ->
+                    {
+                        IconButton(onClick = { report(document.first) }) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = "PDF-отчёт")
+                        }
+                    }
+                }
+                SelectableCard(
+                    title = formatDocumentDate(document.second),
+                    selected = document.first == selectedId,
+                    trailing = reportAction,
+                ) {
                     onSelect(document.first)
                 }
                 if (document.first == selectedId) {
@@ -553,11 +577,14 @@ private fun ListCard(title: String, subtitle: String? = null, onClick: (() -> Un
 }
 
 @Composable
-private fun SelectableCard(title: String, selected: Boolean, subtitle: String? = null, onClick: () -> Unit) {
+private fun SelectableCard(title: String, selected: Boolean, subtitle: String? = null, trailing: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-            if (subtitle != null) Text(subtitle)
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 4.dp, end = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                if (subtitle != null) Text(subtitle)
+            }
+            trailing?.invoke()
         }
     }
 }
@@ -583,6 +610,7 @@ private fun MenuPositionCard(
                 style = MaterialTheme.typography.titleMedium,
                 color = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             )
+            Text("${position.price} ₽", color = MaterialTheme.colorScheme.onSurfaceVariant)
             IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Default.MoreVert, contentDescription = "Изменить")
             }

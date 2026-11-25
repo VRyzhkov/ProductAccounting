@@ -24,6 +24,8 @@ import ru.productaccounting.data.ReceiptDocument
 import ru.productaccounting.data.ReceiptItem
 import ru.productaccounting.data.TransferFile
 import ru.productaccounting.data.TransferSection
+import ru.productaccounting.report.ExpenseReportLine
+import ru.productaccounting.report.ExpenseReportPdf
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDateTime
@@ -80,6 +82,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun writeExpenseReport(uri: Uri, documentId: Long) {
+        viewModelScope.launch {
+            runCatching {
+                val document = dao.getExpenseDocument(documentId)
+                val menus = dao.allMenuPositions().associateBy { it.id }
+                val payments = dao.allPaymentMethods().associateBy { it.id }
+                val lines = dao.getExpenseItems(documentId).map { item ->
+                    val menu = menus[item.menuPositionId]
+                    ExpenseReportLine(
+                        position = menu?.name ?: "Позиция не найдена",
+                        quantity = item.quantity,
+                        price = menu?.price ?: 0,
+                        payment = payments[item.paymentMethodId]?.name ?: "Не указан",
+                        comment = item.comment,
+                    )
+                }
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri, "wt")!!.use {
+                        ExpenseReportPdf.write(formatReportDate(document.date), lines, it)
+                    }
+                }
+            }.onSuccess { _messages.emit("PDF-отчёт создан") }
+                .onFailure { _messages.emit(it.message ?: "Не удалось создать PDF-отчёт") }
+        }
+    }
+
     fun receiptItems(documentId: Long) = dao.observeReceiptItems(documentId)
     fun expenseItems(documentId: Long) = dao.observeExpenseItems(documentId)
     fun ingredients(menuId: Long) = dao.observeIngredients(menuId)
@@ -101,14 +129,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dao.insertPaymentMethod(PaymentMethod(name = name.trim()))
     }
 
-    fun addMenuPosition(name: String) = launchAction("Позиция меню добавлена") {
+    fun addMenuPosition(name: String, price: String) = launchAction("Позиция меню добавлена") {
         require(name.isNotBlank()) { "Укажите название позиции меню" }
-        dao.insertMenuPosition(MenuPosition(name = name.trim()))
+        dao.insertMenuPosition(MenuPosition(name = name.trim(), price = parseWholePrice(price)))
     }
 
-    fun updateMenuPosition(id: Long, name: String) = launchAction("Позиция меню обновлена") {
+    fun updateMenuPosition(id: Long, name: String, price: String) = launchAction("Позиция меню обновлена") {
         require(name.isNotBlank()) { "Укажите название позиции меню" }
-        dao.updateMenuPosition(id, name.trim())
+        dao.updateMenuPosition(id, name.trim(), parseWholePrice(price))
     }
 
     fun deleteMenuPosition(id: Long) = launchAction("Позиция меню удалена") {
@@ -237,9 +265,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return parsed.setScale(2, RoundingMode.HALF_UP).movePointRight(2).longValueExact()
     }
 
+    private fun parseWholePrice(value: String): Long {
+        val parsed = value.trim().toLongOrNull() ?: error("Введите стоимость целым числом")
+        require(parsed >= 0) { "Стоимость не может быть отрицательной" }
+        return parsed
+    }
+
     private fun divideMoney(totalMinor: Long, quantity: BigDecimal): Long =
         BigDecimal.valueOf(totalMinor).divide(quantity, 0, RoundingMode.HALF_UP).longValueExact()
 
     private fun multiplyMoney(unitPriceMinor: Long, quantity: BigDecimal): Long =
         BigDecimal.valueOf(unitPriceMinor).multiply(quantity).setScale(0, RoundingMode.HALF_UP).longValueExact()
+
+    private fun formatReportDate(value: String): String = runCatching {
+        LocalDateTime.parse(value).format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
+    }.getOrDefault(value)
 }

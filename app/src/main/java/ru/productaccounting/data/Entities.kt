@@ -56,6 +56,7 @@ data class ReceiptItem(
 data class MenuPosition(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    val price: Long = 0,
     @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 

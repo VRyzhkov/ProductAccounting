@@ -18,6 +18,7 @@ abstract class AppDao {
     @Query("SELECT * FROM menu_positions") abstract suspend fun allMenuPositions(): List<MenuPosition>
     @Query("SELECT * FROM menu_ingredients") abstract suspend fun allMenuIngredients(): List<MenuIngredient>
     @Query("SELECT * FROM expense_documents") abstract suspend fun allExpenseDocuments(): List<ExpenseDocument>
+    @Query("SELECT * FROM expense_documents WHERE id = :id") abstract suspend fun getExpenseDocument(id: Long): ExpenseDocument
     @Query("SELECT * FROM expense_items") abstract suspend fun allExpenseItems(): List<ExpenseItem>
     @Query("SELECT * FROM expense_allocations") abstract suspend fun allExpenseAllocations(): List<ExpenseAllocation>
 
@@ -62,8 +63,8 @@ abstract class AppDao {
     @Insert
     abstract suspend fun insertMenuPosition(position: MenuPosition): Long
 
-    @Query("UPDATE menu_positions SET name = :name WHERE id = :id")
-    abstract suspend fun updateMenuPosition(id: Long, name: String)
+    @Query("UPDATE menu_positions SET name = :name, price = :price WHERE id = :id")
+    abstract suspend fun updateMenuPosition(id: Long, name: String, price: Long)
 
     @Query("SELECT COUNT(*) FROM expense_items WHERE menuPositionId = :id")
     abstract suspend fun countExpensesForMenuPosition(id: Long): Int
@@ -165,6 +166,9 @@ abstract class AppDao {
 
     @Query("SELECT * FROM expense_items WHERE documentId = :documentId ORDER BY id")
     abstract fun observeExpenseItems(documentId: Long): Flow<List<ExpenseItem>>
+
+    @Query("SELECT * FROM expense_items WHERE documentId = :documentId ORDER BY id")
+    abstract suspend fun getExpenseItems(documentId: Long): List<ExpenseItem>
 
     @Query("""
         SELECT r.id AS receiptItemId, r.quantity,

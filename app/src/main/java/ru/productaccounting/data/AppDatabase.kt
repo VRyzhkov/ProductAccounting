@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ExpenseItem::class,
         ExpenseAllocation::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,7 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
             context,
             AppDatabase::class.java,
             "product-accounting.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -80,6 +80,12 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     db.execSQL("CREATE UNIQUE INDEX index_${table}_guid ON $table(guid)")
                 }
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE menu_positions ADD COLUMN price INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

@@ -69,7 +69,7 @@ class DataTransfer(private val database: AppDatabase) {
             put("payments", chosenPayments.toJson { JSONObject().put("guid", it.guid).put("name", it.name) })
             put("receiptDocuments", chosenReceiptDocs.toJson { JSONObject().put("guid", it.guid).put("date", it.date) })
             put("receiptItems", chosenReceiptItems.toJson { JSONObject().put("guid", it.guid).put("documentGuid", receiptDocGuid.getValue(it.documentId)).put("productGuid", productGuid.getValue(it.productId)).put("quantity", it.quantity).put("unitPriceMinor", it.unitPriceMinor).put("totalCostMinor", it.totalCostMinor) })
-            put("menuPositions", chosenMenus.toJson { JSONObject().put("guid", it.guid).put("name", it.name) })
+            put("menuPositions", chosenMenus.toJson { JSONObject().put("guid", it.guid).put("name", it.name).put("price", it.price) })
             put("menuIngredients", chosenIngredients.toJson { JSONObject().put("guid", it.guid).put("menuGuid", menuGuid.getValue(it.menuPositionId)).put("productGuid", productGuid.getValue(it.productId)).put("quantity", it.quantity) })
             put("expenseDocuments", chosenExpenseDocs.toJson { JSONObject().put("guid", it.guid).put("date", it.date) })
             put("expenseItems", chosenExpenseItems.toJson { JSONObject().put("guid", it.guid).put("documentGuid", expenseDocGuid.getValue(it.documentId)).put("menuGuid", menuGuid.getValue(it.menuPositionId)).put("paymentGuid", paymentGuid.getValue(it.paymentMethodId)).put("quantity", it.quantity).put("comment", it.comment) })
@@ -120,7 +120,7 @@ class DataTransfer(private val database: AppDatabase) {
         val menuIds = mutableMapOf<String, Long>()
         menus.filter { it.str("guid") in allowed }.forEach { o ->
             val guid = o.str("guid"); val old = dao.menuPositionByGuid(guid)
-            dao.saveMenuPosition(MenuPosition(old?.id ?: 0, o.str("name"), guid)); menuIds[guid] = dao.menuPositionByGuid(guid)!!.id
+            dao.saveMenuPosition(MenuPosition(old?.id ?: 0, o.str("name"), o.optLong("price"), guid)); menuIds[guid] = dao.menuPositionByGuid(guid)!!.id
         }
         ingredients.filter { it.str("guid") in allowed }.forEach { o ->
             val guid = o.str("guid"); dao.saveMenuIngredient(MenuIngredient(menuIds.getValue(o.str("menuGuid")), productIds.getValue(o.str("productGuid")), o.str("quantity"), guid))
