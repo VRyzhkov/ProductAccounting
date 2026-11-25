@@ -1,13 +1,19 @@
 package ru.productaccounting
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import ru.productaccounting.data.DataTransfer
 import ru.productaccounting.data.ExpenseDocument
 import ru.productaccounting.data.ExpenseItem
 import ru.productaccounting.data.MenuIngredient
@@ -16,12 +22,16 @@ import ru.productaccounting.data.PaymentMethod
 import ru.productaccounting.data.Product
 import ru.productaccounting.data.ReceiptDocument
 import ru.productaccounting.data.ReceiptItem
+import ru.productaccounting.data.TransferFile
+import ru.productaccounting.data.TransferSection
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDateTime
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val dao = (application as ProductAccountingApplication).database.appDao()
+    private val database = (application as ProductAccountingApplication).database
+    private val dao = database.appDao()
+    private val transfer = DataTransfer(database)
     private val sharing = SharingStarted.WhileSubscribed(5_000)
 
     val products = dao.observeProducts().stateIn(viewModelScope, sharing, emptyList())
@@ -32,6 +42,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val messages = _messages.asSharedFlow()
+    private val _pendingImport = MutableStateFlow<TransferFile?>(null)
+    val pendingImport = _pendingImport.asStateFlow()
+
+    fun loadImport(uri: Uri, route: String) {
+        viewModelScope.launch {
+            runCatching {
+                val json = withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
+                }
+                transfer.parse(json, TransferSection.fromRoute(route))
+            }.onSuccess { _pendingImport.value = it }
+                .onFailure { _messages.emit(it.message ?: "Не удалось открыть файл") }
+        }
+    }
+
+    fun dismissImport() { _pendingImport.value = null }
+
+    fun applyImport(selected: Set<String>) {
+        val file = _pendingImport.value ?: return
+        viewModelScope.launch {
+            runCatching { transfer.import(file, selected) }
+                .onSuccess { _pendingImport.value = null; _messages.emit("Импорт завершён") }
+                .onFailure { _messages.emit(it.message ?: "Не удалось импортировать данные") }
+        }
+    }
+
+    fun exportTo(uri: Uri, route: String, selected: Set<String>) {
+        viewModelScope.launch {
+            runCatching {
+                val json = transfer.export(TransferSection.fromRoute(route), selected)
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(json) }
+                }
+            }.onSuccess { _messages.emit("Экспорт завершён") }
+                .onFailure { _messages.emit(it.message ?: "Не удалось экспортировать данные") }
+        }
+    }
 
     fun receiptItems(documentId: Long) = dao.observeReceiptItems(documentId)
     fun expenseItems(documentId: Long) = dao.observeExpenseItems(documentId)
@@ -70,7 +117,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setIngredient(menuId: Long, productId: Long, quantity: String) = launchAction("Состав сохранён") {
         val normalized = positiveDecimal(quantity)
-        dao.upsertIngredient(MenuIngredient(menuId, productId, normalized))
+        val existing = dao.getIngredient(menuId, productId)
+        dao.upsertIngredient(MenuIngredient(menuId, productId, normalized, guid = existing?.guid ?: java.util.UUID.randomUUID().toString()))
     }
 
     fun createReceiptDocument() = launchAction("Дата прихода создана") {

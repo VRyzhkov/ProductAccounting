@@ -5,11 +5,42 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import java.math.BigDecimal
 
 @Dao
 abstract class AppDao {
+    @Query("SELECT * FROM products") abstract suspend fun allProducts(): List<Product>
+    @Query("SELECT * FROM payment_methods") abstract suspend fun allPaymentMethods(): List<PaymentMethod>
+    @Query("SELECT * FROM receipt_documents") abstract suspend fun allReceiptDocuments(): List<ReceiptDocument>
+    @Query("SELECT * FROM receipt_items") abstract suspend fun allReceiptItems(): List<ReceiptItem>
+    @Query("SELECT * FROM menu_positions") abstract suspend fun allMenuPositions(): List<MenuPosition>
+    @Query("SELECT * FROM menu_ingredients") abstract suspend fun allMenuIngredients(): List<MenuIngredient>
+    @Query("SELECT * FROM expense_documents") abstract suspend fun allExpenseDocuments(): List<ExpenseDocument>
+    @Query("SELECT * FROM expense_items") abstract suspend fun allExpenseItems(): List<ExpenseItem>
+    @Query("SELECT * FROM expense_allocations") abstract suspend fun allExpenseAllocations(): List<ExpenseAllocation>
+
+    @Query("SELECT * FROM products WHERE guid = :guid") abstract suspend fun productByGuid(guid: String): Product?
+    @Query("SELECT * FROM payment_methods WHERE guid = :guid") abstract suspend fun paymentByGuid(guid: String): PaymentMethod?
+    @Query("SELECT * FROM receipt_documents WHERE guid = :guid") abstract suspend fun receiptDocumentByGuid(guid: String): ReceiptDocument?
+    @Query("SELECT * FROM receipt_items WHERE guid = :guid") abstract suspend fun receiptItemByGuid(guid: String): ReceiptItem?
+    @Query("SELECT * FROM menu_positions WHERE guid = :guid") abstract suspend fun menuPositionByGuid(guid: String): MenuPosition?
+    @Query("SELECT * FROM menu_ingredients WHERE guid = :guid") abstract suspend fun menuIngredientByGuid(guid: String): MenuIngredient?
+    @Query("SELECT * FROM expense_documents WHERE guid = :guid") abstract suspend fun expenseDocumentByGuid(guid: String): ExpenseDocument?
+    @Query("SELECT * FROM expense_items WHERE guid = :guid") abstract suspend fun expenseItemByGuid(guid: String): ExpenseItem?
+    @Query("SELECT * FROM expense_allocations WHERE guid = :guid") abstract suspend fun expenseAllocationByGuid(guid: String): ExpenseAllocation?
+
+    @Upsert abstract suspend fun saveProduct(value: Product)
+    @Upsert abstract suspend fun savePaymentMethod(value: PaymentMethod)
+    @Upsert abstract suspend fun saveReceiptDocument(value: ReceiptDocument)
+    @Upsert abstract suspend fun saveReceiptItem(value: ReceiptItem)
+    @Upsert abstract suspend fun saveMenuPosition(value: MenuPosition)
+    @Upsert abstract suspend fun saveMenuIngredient(value: MenuIngredient)
+    @Upsert abstract suspend fun saveExpenseDocument(value: ExpenseDocument)
+    @Upsert abstract suspend fun saveExpenseItem(value: ExpenseItem)
+    @Upsert abstract suspend fun saveExpenseAllocation(value: ExpenseAllocation)
+
     @Query("SELECT * FROM products ORDER BY id")
     abstract fun observeProducts(): Flow<List<Product>>
 
@@ -51,6 +82,9 @@ abstract class AppDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsertIngredient(ingredient: MenuIngredient)
 
+    @Query("SELECT * FROM menu_ingredients WHERE menuPositionId = :menuId AND productId = :productId")
+    abstract suspend fun getIngredient(menuId: Long, productId: Long): MenuIngredient?
+
     @Query("SELECT * FROM menu_ingredients WHERE menuPositionId = :menuId ORDER BY productId")
     abstract fun observeIngredients(menuId: Long): Flow<List<MenuIngredient>>
 
@@ -58,7 +92,7 @@ abstract class AppDao {
     abstract suspend fun getIngredients(menuId: Long): List<MenuIngredient>
 
     @Query("""
-        SELECT d.id, d.date, COUNT(i.id) AS itemCount
+        SELECT d.id, d.guid, d.date, COUNT(i.id) AS itemCount
         FROM receipt_documents d LEFT JOIN receipt_items i ON i.documentId = d.id
         GROUP BY d.id ORDER BY d.date DESC, d.id DESC
     """)
@@ -108,7 +142,7 @@ abstract class AppDao {
     abstract fun observeReceiptItems(documentId: Long): Flow<List<ReceiptItem>>
 
     @Query("""
-        SELECT d.id, d.date, COUNT(i.id) AS itemCount
+        SELECT d.id, d.guid, d.date, COUNT(i.id) AS itemCount
         FROM expense_documents d LEFT JOIN expense_items i ON i.documentId = d.id
         GROUP BY d.id ORDER BY d.date DESC, d.id DESC
     """)

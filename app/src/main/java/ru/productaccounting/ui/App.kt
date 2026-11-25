@@ -1,5 +1,7 @@
 package ru.productaccounting.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,12 +22,15 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -69,6 +75,7 @@ import ru.productaccounting.data.MenuPosition
 import ru.productaccounting.data.PaymentMethod
 import ru.productaccounting.data.Product
 import ru.productaccounting.data.ReceiptItem
+import ru.productaccounting.data.TransferEntry
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
@@ -93,13 +100,48 @@ fun ProductAccountingApp(viewModel: MainViewModel) {
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route ?: destinations.first().route
     val snackbar = remember { SnackbarHostState() }
+    val products by viewModel.products.collectAsStateWithLifecycle()
+    val payments by viewModel.paymentMethods.collectAsStateWithLifecycle()
+    val receiptDocuments by viewModel.receiptDocuments.collectAsStateWithLifecycle()
+    val menuPositions by viewModel.menuPositions.collectAsStateWithLifecycle()
+    val expenseDocuments by viewModel.expenseDocuments.collectAsStateWithLifecycle()
+    val pendingImport by viewModel.pendingImport.collectAsStateWithLifecycle()
+    var exportEntries by remember { mutableStateOf<List<TransferEntry>?>(null) }
+    var exportSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.loadImport(uri, currentRoute)
+    }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) viewModel.exportTo(uri, currentRoute, exportSelection)
+        exportSelection = emptySet()
+    }
+    fun currentEntries(): List<TransferEntry> = when (currentRoute) {
+        "products" -> products.map { TransferEntry(it.guid, it.name) }
+        "payments" -> payments.map { TransferEntry(it.guid, it.name) }
+        "receipts" -> receiptDocuments.map { TransferEntry(it.guid, formatDocumentDate(it.date)) }
+        "menu" -> menuPositions.map { TransferEntry(it.guid, it.name) }
+        "expenses" -> expenseDocuments.map { TransferEntry(it.guid, formatDocumentDate(it.date)) }
+        else -> emptyList()
+    }
 
     LaunchedEffect(Unit) {
         viewModel.messages.collect { snackbar.showSnackbar(it) }
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(destinations.first { it.route == currentRoute }.title) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(destinations.first { it.route == currentRoute }.title) },
+                actions = {
+                    IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/json", "text/plain")) }) {
+                        Icon(Icons.Default.FileDownload, contentDescription = "Импорт")
+                    }
+                    IconButton(onClick = { exportEntries = currentEntries() }) {
+                        Icon(Icons.Default.FileUpload, contentDescription = "Экспорт")
+                    }
+                },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             NavigationBar {
@@ -128,6 +170,72 @@ fun ProductAccountingApp(viewModel: MainViewModel) {
             composable("payments") { PaymentsScreen(viewModel) }
         }
     }
+    exportEntries?.let { entries ->
+        TransferSelectionDialog(
+            title = "Экспорт",
+            entries = entries,
+            onDismiss = { exportEntries = null },
+        ) { selected ->
+            exportEntries = null
+            exportSelection = selected
+            exportLauncher.launch("product-accounting-$currentRoute.json")
+        }
+    }
+    pendingImport?.let { file ->
+        TransferSelectionDialog(
+            title = "Импорт",
+            entries = file.entries,
+            onDismiss = viewModel::dismissImport,
+            onConfirm = viewModel::applyImport,
+        )
+    }
+}
+
+@Composable
+private fun TransferSelectionDialog(
+    title: String,
+    entries: List<TransferEntry>,
+    onDismiss: () -> Unit,
+    onConfirm: (Set<String>) -> Unit,
+) {
+    var selected by remember(entries) { mutableStateOf(entries.mapTo(mutableSetOf()) { it.guid }.toSet()) }
+    val allSelected = entries.isNotEmpty() && selected.size == entries.size
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            selected = if (allSelected) emptySet() else entries.mapTo(mutableSetOf()) { it.guid }
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = allSelected, onCheckedChange = null)
+                        Text("Выбрать все")
+                    }
+                }
+                items(entries, key = { it.guid }) { entry ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            selected = selected.toMutableSet().apply {
+                                if (!add(entry.guid)) remove(entry.guid)
+                            }
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = entry.guid in selected, onCheckedChange = null)
+                        Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selected) }, enabled = selected.isNotEmpty()) { Text(title) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
 }
 
 @Composable

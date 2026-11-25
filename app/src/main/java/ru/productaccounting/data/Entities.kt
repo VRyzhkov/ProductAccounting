@@ -1,27 +1,34 @@
 package ru.productaccounting.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import java.util.UUID
 
-@Entity(tableName = "products", indices = [Index(value = ["name"], unique = true)])
+private fun newGuid(): String = UUID.randomUUID().toString()
+
+@Entity(tableName = "products", indices = [Index(value = ["name"], unique = true), Index(value = ["guid"], unique = true)])
 data class Product(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val unit: String,
+    @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
-@Entity(tableName = "payment_methods", indices = [Index(value = ["name"], unique = true)])
+@Entity(tableName = "payment_methods", indices = [Index(value = ["name"], unique = true), Index(value = ["guid"], unique = true)])
 data class PaymentMethod(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
-@Entity(tableName = "receipt_documents")
+@Entity(tableName = "receipt_documents", indices = [Index(value = ["guid"], unique = true)])
 data class ReceiptDocument(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val date: String,
+    @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
 @Entity(
@@ -30,7 +37,7 @@ data class ReceiptDocument(
         ForeignKey(ReceiptDocument::class, ["id"], ["documentId"], onDelete = ForeignKey.CASCADE),
         ForeignKey(Product::class, ["id"], ["productId"], onDelete = ForeignKey.RESTRICT),
     ],
-    indices = [Index("documentId"), Index("productId")],
+    indices = [Index("documentId"), Index("productId"), Index(value = ["guid"], unique = true)],
 )
 data class ReceiptItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -42,12 +49,14 @@ data class ReceiptItem(
     val unitPriceMinor: Long,
     /** Total line cost in kopecks. Kept separately to avoid losing it when unit price is rounded. */
     val totalCostMinor: Long,
+    @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
-@Entity(tableName = "menu_positions", indices = [Index(value = ["name"], unique = true)])
+@Entity(tableName = "menu_positions", indices = [Index(value = ["name"], unique = true), Index(value = ["guid"], unique = true)])
 data class MenuPosition(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
 @Entity(
@@ -57,18 +66,20 @@ data class MenuPosition(
         ForeignKey(MenuPosition::class, ["id"], ["menuPositionId"], onDelete = ForeignKey.CASCADE),
         ForeignKey(Product::class, ["id"], ["productId"], onDelete = ForeignKey.RESTRICT),
     ],
-    indices = [Index("productId")],
+    indices = [Index("productId"), Index(value = ["guid"], unique = true)],
 )
 data class MenuIngredient(
     val menuPositionId: Long,
     val productId: Long,
     val quantity: String,
+    @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
-@Entity(tableName = "expense_documents")
+@Entity(tableName = "expense_documents", indices = [Index(value = ["guid"], unique = true)])
 data class ExpenseDocument(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val date: String,
+    @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
 @Entity(
@@ -78,7 +89,7 @@ data class ExpenseDocument(
         ForeignKey(MenuPosition::class, ["id"], ["menuPositionId"], onDelete = ForeignKey.RESTRICT),
         ForeignKey(PaymentMethod::class, ["id"], ["paymentMethodId"], onDelete = ForeignKey.RESTRICT),
     ],
-    indices = [Index("documentId"), Index("menuPositionId"), Index("paymentMethodId")],
+    indices = [Index("documentId"), Index("menuPositionId"), Index("paymentMethodId"), Index(value = ["guid"], unique = true)],
 )
 data class ExpenseItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -87,6 +98,7 @@ data class ExpenseItem(
     val quantity: String,
     val paymentMethodId: Long,
     val comment: String = "",
+    @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
 @Entity(
@@ -95,7 +107,7 @@ data class ExpenseItem(
         ForeignKey(ExpenseItem::class, ["id"], ["expenseItemId"], onDelete = ForeignKey.CASCADE),
         ForeignKey(ReceiptItem::class, ["id"], ["receiptItemId"], onDelete = ForeignKey.RESTRICT),
     ],
-    indices = [Index("expenseItemId"), Index("receiptItemId")],
+    indices = [Index("expenseItemId"), Index("receiptItemId"), Index(value = ["guid"], unique = true)],
 )
 data class ExpenseAllocation(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -103,8 +115,9 @@ data class ExpenseAllocation(
     val receiptItemId: Long,
     val productId: Long,
     val quantity: String,
+    @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
-data class ReceiptDocumentSummary(val id: Long, val date: String, val itemCount: Int)
-data class ExpenseDocumentSummary(val id: Long, val date: String, val itemCount: Int)
+data class ReceiptDocumentSummary(val id: Long, val guid: String, val date: String, val itemCount: Int)
+data class ExpenseDocumentSummary(val id: Long, val guid: String, val date: String, val itemCount: Int)
 data class ReceiptBatchBalance(val receiptItemId: Long, val quantity: String, val allocated: String?)
