@@ -124,17 +124,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dao.insertExpenseDocument(ExpenseDocument(date = LocalDateTime.now().toString()))
     }
 
-    fun addExpenseItem(documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long) =
+    fun addExpenseItem(documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long, comment: String) =
         launchAction("Расход проведён по FIFO") {
             dao.addExpenseWithFifo(ExpenseItem(
                 documentId = documentId,
                 menuPositionId = menuId,
                 quantity = positiveDecimal(quantity),
                 paymentMethodId = paymentMethodId,
+                comment = comment.trim(),
             ))
         }
 
-    fun updateExpenseItem(itemId: Long, documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long) =
+    fun updateExpenseItem(itemId: Long, documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long, comment: String) =
         launchAction("Запись расхода обновлена") {
             dao.updateExpenseWithFifo(ExpenseItem(
                 id = itemId,
@@ -142,6 +143,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 menuPositionId = menuId,
                 quantity = positiveDecimal(quantity),
                 paymentMethodId = paymentMethodId,
+                comment = comment.trim(),
             ))
         }
 

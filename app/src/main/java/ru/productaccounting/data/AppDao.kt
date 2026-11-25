@@ -120,8 +120,8 @@ abstract class AppDao {
     @Insert
     abstract suspend fun insertExpenseItem(item: ExpenseItem): Long
 
-    @Query("UPDATE expense_items SET menuPositionId = :menuPositionId, quantity = :quantity, paymentMethodId = :paymentMethodId WHERE id = :id")
-    abstract suspend fun updateExpenseItemValues(id: Long, menuPositionId: Long, quantity: String, paymentMethodId: Long)
+    @Query("UPDATE expense_items SET menuPositionId = :menuPositionId, quantity = :quantity, paymentMethodId = :paymentMethodId, comment = :comment WHERE id = :id")
+    abstract suspend fun updateExpenseItemValues(id: Long, menuPositionId: Long, quantity: String, paymentMethodId: Long, comment: String)
 
     @Query("DELETE FROM expense_allocations WHERE expenseItemId = :expenseItemId")
     abstract suspend fun deleteAllocations(expenseItemId: Long)
@@ -150,7 +150,7 @@ abstract class AppDao {
     @Transaction
     open suspend fun updateExpenseWithFifo(item: ExpenseItem) {
         deleteAllocations(item.id)
-        updateExpenseItemValues(item.id, item.menuPositionId, item.quantity, item.paymentMethodId)
+        updateExpenseItemValues(item.id, item.menuPositionId, item.quantity, item.paymentMethodId, item.comment)
         allocateExpense(item, item.id)
     }
 

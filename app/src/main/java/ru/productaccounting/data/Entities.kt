@@ -86,6 +86,7 @@ data class ExpenseItem(
     val menuPositionId: Long,
     val quantity: String,
     val paymentMethodId: Long,
+    val comment: String = "",
 )
 
 @Entity(

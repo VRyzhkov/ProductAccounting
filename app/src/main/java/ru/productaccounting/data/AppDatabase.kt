@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ExpenseItem::class,
         ExpenseAllocation::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,7 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
             context,
             AppDatabase::class.java,
             "product-accounting.db",
-        ).addMigrations(MIGRATION_1_2).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -40,6 +40,14 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "UPDATE receipt_items SET totalCostMinor = " +
                         "CAST(ROUND(unitPriceMinor * CAST(quantity AS REAL)) AS INTEGER)"
+                )
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE expense_items ADD COLUMN comment TEXT NOT NULL DEFAULT ''"
                 )
             }
         }

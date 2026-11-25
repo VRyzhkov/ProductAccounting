@@ -10,13 +10,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.AlertDialog
@@ -28,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -46,8 +50,10 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -139,7 +145,7 @@ private fun ProductsScreen(vm: MainViewModel) {
     ) {
         val sortedProducts = products.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
         items(sortedProducts, key = { it.id }) { product ->
-            ListCard(product.name, "Единица измерения: ${product.unit}") {
+            ProductListCard(product.name, product.unit) {
                 editedProduct = product
                 showDialog = true
             }
@@ -166,7 +172,7 @@ private fun PaymentsScreen(vm: MainViewModel) {
     val methods by vm.paymentMethods.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
     EntityList(
-        emptyText = "Добавьте первый способ оплаты",
+        emptyText = null,
         floatingAction = { FloatingActionButton(onClick = { showDialog = true }) { Icon(Icons.Default.Add, "Добавить") } },
     ) {
         val sortedMethods = methods.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
@@ -329,14 +335,16 @@ private fun ExpensesScreen(vm: MainViewModel) {
         lines.forEach { line ->
             val menu = positions.firstOrNull { it.id == line.menuPositionId }?.name ?: "Позиция №${line.menuPositionId}"
             val payment = methods.firstOrNull { it.id == line.paymentMethodId }?.name ?: "Оплата №${line.paymentMethodId}"
-            ListCard(menu, "Количество: ${line.quantity} · $payment") { editedLine = line; showLineDialog = true }
+            val details = "Количество: ${line.quantity} · $payment" +
+                if (line.comment.isBlank()) "" else " · ${line.comment}"
+            ListCard(menu, details) { editedLine = line; showLineDialog = true }
         }
     }
     if (showLineDialog) {
         val line = editedLine
-        ExpenseLineDialog(positions, methods, line, onDismiss = { showLineDialog = false }) { menuId, quantity, paymentId ->
-            if (line == null) vm.addExpenseItem(selectedId, menuId, quantity, paymentId)
-            else vm.updateExpenseItem(line.id, line.documentId, menuId, quantity, paymentId)
+        ExpenseLineDialog(positions, methods, line, onDismiss = { showLineDialog = false }) { menuId, quantity, paymentId, comment ->
+            if (line == null) vm.addExpenseItem(selectedId, menuId, quantity, paymentId, comment)
+            else vm.updateExpenseItem(line.id, line.documentId, menuId, quantity, paymentId, comment)
             showLineDialog = false
         }
     }
@@ -403,6 +411,29 @@ private fun DocumentScreen(
 }
 
 @Composable
+private fun ProductListCard(title: String, unit: String, onClick: () -> Unit) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = "ед. изм.: $unit",
+                maxLines = 1,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ListCard(title: String, subtitle: String? = null, onClick: (() -> Unit)? = null) {
     val modifier = if (onClick == null) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().clickable(onClick = onClick)
     Card(modifier) {
@@ -432,15 +463,23 @@ private fun MenuPositionCard(
     onDelete: () -> Unit,
 ) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onToggle)) {
-        Column(Modifier.padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                position.name,
+                text = position.name,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium,
                 color = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onEdit) { Text("Изменить") }
-                TextButton(onClick = onDelete) { Text("Удалить") }
+            IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Изменить")
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "Удалить")
             }
         }
     }
@@ -558,19 +597,23 @@ private fun IngredientDialog(products: List<Product>, onDismiss: () -> Unit, onS
 }
 
 @Composable
-private fun ExpenseLineDialog(positions: List<MenuPosition>, methods: List<PaymentMethod>, initial: ExpenseItem? = null, onDismiss: () -> Unit, onSave: (Long, String, Long) -> Unit) {
+private fun ExpenseLineDialog(positions: List<MenuPosition>, methods: List<PaymentMethod>, initial: ExpenseItem? = null, onDismiss: () -> Unit, onSave: (Long, String, Long, String) -> Unit) {
     var menuId by remember(initial) { mutableLongStateOf(initial?.menuPositionId ?: positions.first().id) }
     var paymentId by remember(initial) { mutableLongStateOf(initial?.paymentMethodId ?: methods.first().id) }
-    var quantity by remember(initial) { mutableStateOf(initial?.quantity.orEmpty()) }
+    var quantity by remember(initial) {
+        mutableLongStateOf(initial?.quantity?.toLongOrNull()?.takeIf { it in 1L..10L } ?: 1L)
+    }
+    var comment by remember(initial) { mutableStateOf(initial?.comment.orEmpty()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "Новая запись расхода" else "Редактирование расхода") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceField("Позиция меню", positions, menuId, { it.id }, { it.name }) { menuId = it }
-            OutlinedTextField(quantity, { quantity = it }, label = { Text("Количество") }, singleLine = true)
+            ChoiceField("Количество", (1..10).toList(), quantity, { it.toLong() }, { it.toString() }) { quantity = it }
             ChoiceField("Способ оплаты", methods, paymentId, { it.id }, { it.name }) { paymentId = it }
+            OutlinedTextField(comment, { comment = it }, label = { Text("Комментарий") }, modifier = Modifier.fillMaxWidth())
         } },
-        confirmButton = { TextButton(onClick = { onSave(menuId, quantity, paymentId) }) { Text("Сохранить") } },
+        confirmButton = { TextButton(onClick = { onSave(menuId, quantity.toString(), paymentId, comment) }) { Text("Сохранить") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }
