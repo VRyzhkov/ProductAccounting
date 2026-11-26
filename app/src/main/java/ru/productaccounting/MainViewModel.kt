@@ -143,10 +143,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dao.deleteMenuPosition(id)
     }
 
-    fun setIngredient(menuId: Long, productId: Long, quantity: String) = launchAction("Состав сохранён") {
+    fun setIngredient(menuId: Long, productId: Long, quantity: String, choiceGroup: String? = null) = launchAction("Состав сохранён") {
         val normalized = positiveDecimal(quantity)
         val existing = dao.getIngredient(menuId, productId)
-        dao.upsertIngredient(MenuIngredient(menuId, productId, normalized, guid = existing?.guid ?: java.util.UUID.randomUUID().toString()))
+        dao.upsertIngredient(MenuIngredient(
+            menuPositionId = menuId,
+            productId = productId,
+            quantity = normalized,
+            choiceGroup = choiceGroup ?: existing?.choiceGroup ?: java.util.UUID.randomUUID().toString(),
+            guid = existing?.guid ?: java.util.UUID.randomUUID().toString(),
+        ))
     }
 
     fun createReceiptDocument() = launchAction("Дата прихода создана") {
@@ -200,7 +206,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dao.insertExpenseDocument(ExpenseDocument(date = LocalDateTime.now().toString()))
     }
 
-    fun addExpenseItem(documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long, comment: String) =
+    fun addExpenseItem(documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long, comment: String, choices: Map<String, Long>) =
         launchAction("Расход проведён по FIFO") {
             dao.addExpenseWithFifo(ExpenseItem(
                 documentId = documentId,
@@ -208,10 +214,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 quantity = positiveDecimal(quantity),
                 paymentMethodId = paymentMethodId,
                 comment = comment.trim(),
+                ingredientChoices = encodeChoices(choices),
             ))
         }
 
-    fun updateExpenseItem(itemId: Long, documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long, comment: String) =
+    fun updateExpenseItem(itemId: Long, documentId: Long, menuId: Long, quantity: String, paymentMethodId: Long, comment: String, choices: Map<String, Long>) =
         launchAction("Запись расхода обновлена") {
             dao.updateExpenseWithFifo(ExpenseItem(
                 id = itemId,
@@ -220,8 +227,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 quantity = positiveDecimal(quantity),
                 paymentMethodId = paymentMethodId,
                 comment = comment.trim(),
+                ingredientChoices = encodeChoices(choices),
             ))
         }
+
+    private fun encodeChoices(choices: Map<String, Long>): String =
+        choices.entries.joinToString(",") { "${it.key}:${it.value}" }
 
     private fun receiptItem(
         id: Long,

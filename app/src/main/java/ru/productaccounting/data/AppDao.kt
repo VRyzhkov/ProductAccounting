@@ -155,8 +155,8 @@ abstract class AppDao {
     @Insert
     abstract suspend fun insertExpenseItem(item: ExpenseItem): Long
 
-    @Query("UPDATE expense_items SET menuPositionId = :menuPositionId, quantity = :quantity, paymentMethodId = :paymentMethodId, comment = :comment WHERE id = :id")
-    abstract suspend fun updateExpenseItemValues(id: Long, menuPositionId: Long, quantity: String, paymentMethodId: Long, comment: String)
+    @Query("UPDATE expense_items SET menuPositionId = :menuPositionId, quantity = :quantity, paymentMethodId = :paymentMethodId, comment = :comment, ingredientChoices = :ingredientChoices WHERE id = :id")
+    abstract suspend fun updateExpenseItemValues(id: Long, menuPositionId: Long, quantity: String, paymentMethodId: Long, comment: String, ingredientChoices: String)
 
     @Query("DELETE FROM expense_allocations WHERE expenseItemId = :expenseItemId")
     abstract suspend fun deleteAllocations(expenseItemId: Long)
@@ -188,7 +188,7 @@ abstract class AppDao {
     @Transaction
     open suspend fun updateExpenseWithFifo(item: ExpenseItem) {
         deleteAllocations(item.id)
-        updateExpenseItemValues(item.id, item.menuPositionId, item.quantity, item.paymentMethodId, item.comment)
+        updateExpenseItemValues(item.id, item.menuPositionId, item.quantity, item.paymentMethodId, item.comment, item.ingredientChoices)
         allocateExpense(item, item.id)
     }
 
@@ -196,7 +196,18 @@ abstract class AppDao {
         val ingredients = getIngredients(item.menuPositionId)
         require(ingredients.isNotEmpty()) { "У позиции меню не задан состав" }
         val multiplier = item.quantity.decimal()
-        val requirements = ingredients.associate { it.productId to it.quantity.decimal() * multiplier }
+        val choices = item.ingredientChoices.split(',').mapNotNull { pair ->
+            val parts = pair.split(':', limit = 2)
+            parts.takeIf { it.size == 2 }?.let { it[0] to it[1].toLongOrNull() }?.takeIf { it.second != null }
+        }.associate { it.first to it.second!! }
+        val selectedIngredients = ingredients.groupBy { it.choiceGroup }.values.map { group ->
+            val selectedId = choices[group.first().choiceGroup] ?: group.first().productId
+            group.firstOrNull { it.productId == selectedId }
+                ?: error("Выбранный товар не входит в состав позиции меню")
+        }
+        val requirements = selectedIngredients.groupingBy { it.productId }.fold(BigDecimal.ZERO) { total, ingredient ->
+            total + ingredient.quantity.decimal() * multiplier
+        }
 
         // Validate all balances before writing anything. The Room transaction rolls back on failure.
         requirements.forEach { (productId, required) ->

@@ -21,6 +21,8 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
@@ -378,9 +380,15 @@ private fun MenuScreen(vm: MainViewModel) {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.padding(start = 12.dp, top = 8.dp),
                     ) {
-                        ingredients.forEach { ingredient ->
-                            val product = products.firstOrNull { it.id == ingredient.productId }
-                            ListCard(product?.name ?: "Товар №${ingredient.productId}", "${ingredient.quantity} ${product?.unit.orEmpty()}")
+                        ingredients.groupBy { it.choiceGroup }.values.forEach { group ->
+                            val names = group.joinToString(" / ") { ingredient ->
+                                products.firstOrNull { it.id == ingredient.productId }?.name ?: "Товар №${ingredient.productId}"
+                            }
+                            val amounts = group.joinToString(" / ") { ingredient ->
+                                val product = products.firstOrNull { it.id == ingredient.productId }
+                                "${ingredient.quantity} ${product?.unit.orEmpty()}"
+                            }
+                            ListCard(names, amounts)
                         }
                     }
                 }
@@ -402,8 +410,8 @@ private fun MenuScreen(vm: MainViewModel) {
         }
     }
     if (showIngredientDialog) {
-        IngredientDialog(products, onDismiss = { showIngredientDialog = false }) { productId, quantity ->
-            vm.setIngredient(selectedId, productId, quantity); showIngredientDialog = false
+        IngredientDialog(products, ingredients, onDismiss = { showIngredientDialog = false }) { productId, quantity, choiceGroup ->
+            vm.setIngredient(selectedId, productId, quantity, choiceGroup); showIngredientDialog = false
         }
     }
     positionToDelete?.let { position ->
@@ -428,6 +436,7 @@ private fun ExpensesScreen(vm: MainViewModel) {
     val documents by vm.expenseDocuments.collectAsStateWithLifecycle()
     val positions by vm.menuPositions.collectAsStateWithLifecycle()
     val methods by vm.paymentMethods.collectAsStateWithLifecycle()
+    val products by vm.products.collectAsStateWithLifecycle()
     var selectedId by remember { mutableLongStateOf(0) }
     var showLineDialog by remember { mutableStateOf(false) }
     var editedLine by remember { mutableStateOf<ExpenseItem?>(null) }
@@ -462,9 +471,9 @@ private fun ExpensesScreen(vm: MainViewModel) {
     }
     if (showLineDialog) {
         val line = editedLine
-        ExpenseLineDialog(positions, methods, line, onDismiss = { showLineDialog = false }) { menuId, quantity, paymentId, comment ->
-            if (line == null) vm.addExpenseItem(selectedId, menuId, quantity, paymentId, comment)
-            else vm.updateExpenseItem(line.id, line.documentId, menuId, quantity, paymentId, comment)
+        ExpenseLineDialog(vm, positions, methods, products, line, onDismiss = { showLineDialog = false }) { menuId, quantity, paymentId, comment, choices ->
+            if (line == null) vm.addExpenseItem(selectedId, menuId, quantity, paymentId, comment, choices)
+            else vm.updateExpenseItem(line.id, line.documentId, menuId, quantity, paymentId, comment, choices)
             showLineDialog = false
         }
     }
@@ -570,8 +579,20 @@ private fun ListCard(title: String, subtitle: String? = null, onClick: (() -> Un
     val modifier = if (onClick == null) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().clickable(onClick = onClick)
     Card(modifier) {
         Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            if (subtitle != null) Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -717,42 +738,107 @@ private fun String.decimalOrNull(): BigDecimal? = trim().replace(',', '.').toBig
 private fun BigDecimal.moneyInput(): String = setScale(2, RoundingMode.HALF_UP).toPlainString()
 
 @Composable
-private fun IngredientDialog(products: List<Product>, onDismiss: () -> Unit, onSave: (Long, String) -> Unit) {
+private fun IngredientDialog(
+    products: List<Product>,
+    ingredients: List<MenuIngredient>,
+    onDismiss: () -> Unit,
+    onSave: (Long, String, String?) -> Unit,
+) {
     var productId by remember { mutableLongStateOf(products.first().id) }
     var quantity by remember { mutableStateOf("") }
+    var choiceGroup by remember { mutableStateOf<String?>(null) }
+    val groups = ingredients.groupBy { it.choiceGroup }.values
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Товар в составе") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceField("Товар", products, productId, { it.id }, { it.name }) { productId = it }
             OutlinedTextField(quantity, { quantity = it }, label = { Text("Количество на одну позицию") }, singleLine = true)
+            ChoiceField(
+                label = "Использование",
+                values = listOf(null) + groups.map { it.first().choiceGroup },
+                selectedId = choiceGroup?.hashCode()?.toLong() ?: 0L,
+                id = { it?.hashCode()?.toLong() ?: 0L },
+                name = { groupId ->
+                    if (groupId == null) "Обязательный ингредиент"
+                    else {
+                        val names = ingredients.filter { it.choiceGroup == groupId }.mapNotNull { ingredient ->
+                            products.firstOrNull { it.id == ingredient.productId }?.name
+                        }
+                        "Вариант для: ${names.joinToString(" / ")}"
+                    }
+                },
+            ) { selected ->
+                choiceGroup = groups.firstOrNull { it.first().choiceGroup.hashCode().toLong() == selected }?.first()?.choiceGroup
+            }
         } },
-        confirmButton = { TextButton(onClick = { onSave(productId, quantity) }) { Text("Сохранить") } },
+        confirmButton = { TextButton(onClick = { onSave(productId, quantity, choiceGroup) }) { Text("Сохранить") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }
 
 @Composable
-private fun ExpenseLineDialog(positions: List<MenuPosition>, methods: List<PaymentMethod>, initial: ExpenseItem? = null, onDismiss: () -> Unit, onSave: (Long, String, Long, String) -> Unit) {
+private fun ExpenseLineDialog(
+    vm: MainViewModel,
+    positions: List<MenuPosition>,
+    methods: List<PaymentMethod>,
+    products: List<Product>,
+    initial: ExpenseItem? = null,
+    onDismiss: () -> Unit,
+    onSave: (Long, String, Long, String, Map<String, Long>) -> Unit,
+) {
     var menuId by remember(initial) { mutableLongStateOf(initial?.menuPositionId ?: positions.first().id) }
     var paymentId by remember(initial) { mutableLongStateOf(initial?.paymentMethodId ?: methods.first().id) }
     var quantity by remember(initial) {
         mutableLongStateOf(initial?.quantity?.toLongOrNull()?.takeIf { it in 1L..10L } ?: 1L)
     }
     var comment by remember(initial) { mutableStateOf(initial?.comment.orEmpty()) }
+    val ingredientsFlow = remember(menuId) { vm.ingredients(menuId) }
+    val ingredients by ingredientsFlow.collectAsStateWithLifecycle(emptyList())
+    var choices by remember(initial) { mutableStateOf(decodeChoices(initial?.ingredientChoices.orEmpty())) }
+    LaunchedEffect(menuId, ingredients) {
+        choices = ingredients.groupBy { it.choiceGroup }.mapValues { (groupId, group) ->
+            choices[groupId]?.takeIf { selected -> group.any { it.productId == selected } } ?: group.first().productId
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "Новая запись расхода" else "Редактирование расхода") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceField("Позиция меню", positions, menuId, { it.id }, { it.name }) { menuId = it }
+            ingredients.groupBy { it.choiceGroup }.values.filter { it.size > 1 }.forEach { group ->
+                val selectedIndex = group.indexOfFirst { it.productId == choices[group.first().choiceGroup] }.coerceAtLeast(0)
+                Text("Ингредиент на выбор", style = MaterialTheme.typography.labelMedium)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    IconButton(onClick = {
+                        val next = if (selectedIndex == 0) group.lastIndex else selectedIndex - 1
+                        choices = choices + (group.first().choiceGroup to group[next].productId)
+                    }) { Icon(Icons.Default.ChevronLeft, "Предыдущий товар") }
+                    Text(
+                        products.firstOrNull { it.id == group[selectedIndex].productId }?.name ?: "Товар №${group[selectedIndex].productId}",
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    IconButton(onClick = {
+                        val next = if (selectedIndex == group.lastIndex) 0 else selectedIndex + 1
+                        choices = choices + (group.first().choiceGroup to group[next].productId)
+                    }) { Icon(Icons.Default.ChevronRight, "Следующий товар") }
+                }
+            }
             ChoiceField("Количество", (1..10).toList(), quantity, { it.toLong() }, { it.toString() }) { quantity = it }
             ChoiceField("Способ оплаты", methods, paymentId, { it.id }, { it.name }) { paymentId = it }
             OutlinedTextField(comment, { comment = it }, label = { Text("Комментарий") }, modifier = Modifier.fillMaxWidth())
         } },
-        confirmButton = { TextButton(onClick = { onSave(menuId, quantity.toString(), paymentId, comment) }) { Text("Сохранить") } },
+        confirmButton = { TextButton(onClick = { onSave(menuId, quantity.toString(), paymentId, comment, choices) }) { Text("Сохранить") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }
+
+private fun decodeChoices(value: String): Map<String, Long> = value.split(',').mapNotNull { pair ->
+    val parts = pair.split(':', limit = 2)
+    if (parts.size == 2) parts[1].toLongOrNull()?.let { parts[0] to it } else null
+}.toMap()
 
 @Composable
 private fun <T> ChoiceField(label: String, values: List<T>, selectedId: Long, id: (T) -> Long, name: (T) -> String, onSelect: (Long) -> Unit) {

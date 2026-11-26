@@ -70,9 +70,13 @@ class DataTransfer(private val database: AppDatabase) {
             put("receiptDocuments", chosenReceiptDocs.toJson { JSONObject().put("guid", it.guid).put("date", it.date) })
             put("receiptItems", chosenReceiptItems.toJson { JSONObject().put("guid", it.guid).put("documentGuid", receiptDocGuid.getValue(it.documentId)).put("productGuid", productGuid.getValue(it.productId)).put("quantity", it.quantity).put("unitPriceMinor", it.unitPriceMinor).put("totalCostMinor", it.totalCostMinor) })
             put("menuPositions", chosenMenus.toJson { JSONObject().put("guid", it.guid).put("name", it.name).put("price", it.price) })
-            put("menuIngredients", chosenIngredients.toJson { JSONObject().put("guid", it.guid).put("menuGuid", menuGuid.getValue(it.menuPositionId)).put("productGuid", productGuid.getValue(it.productId)).put("quantity", it.quantity) })
+            put("menuIngredients", chosenIngredients.toJson { JSONObject().put("guid", it.guid).put("menuGuid", menuGuid.getValue(it.menuPositionId)).put("productGuid", productGuid.getValue(it.productId)).put("quantity", it.quantity).put("choiceGroup", it.choiceGroup) })
             put("expenseDocuments", chosenExpenseDocs.toJson { JSONObject().put("guid", it.guid).put("date", it.date) })
-            put("expenseItems", chosenExpenseItems.toJson { JSONObject().put("guid", it.guid).put("documentGuid", expenseDocGuid.getValue(it.documentId)).put("menuGuid", menuGuid.getValue(it.menuPositionId)).put("paymentGuid", paymentGuid.getValue(it.paymentMethodId)).put("quantity", it.quantity).put("comment", it.comment) })
+            put("expenseItems", chosenExpenseItems.toJson { item ->
+                val choices = JSONObject()
+                decodeChoices(item.ingredientChoices).forEach { (group, productId) -> choices.put(group, productGuid[productId]) }
+                JSONObject().put("guid", item.guid).put("documentGuid", expenseDocGuid.getValue(item.documentId)).put("menuGuid", menuGuid.getValue(item.menuPositionId)).put("paymentGuid", paymentGuid.getValue(item.paymentMethodId)).put("quantity", item.quantity).put("comment", item.comment).put("ingredientChoices", choices)
+            })
             put("allocations", chosenAllocations.toJson { JSONObject().put("guid", it.guid).put("expenseGuid", expenseItems.first { e -> e.id == it.expenseItemId }.guid).put("receiptItemGuid", receiptItemGuid.getValue(it.receiptItemId)).put("productGuid", productGuid.getValue(it.productId)).put("quantity", it.quantity) })
         }.toString(2)
     }
@@ -123,7 +127,14 @@ class DataTransfer(private val database: AppDatabase) {
             dao.saveMenuPosition(MenuPosition(old?.id ?: 0, o.str("name"), o.optLong("price"), guid)); menuIds[guid] = dao.menuPositionByGuid(guid)!!.id
         }
         ingredients.filter { it.str("guid") in allowed }.forEach { o ->
-            val guid = o.str("guid"); dao.saveMenuIngredient(MenuIngredient(menuIds.getValue(o.str("menuGuid")), productIds.getValue(o.str("productGuid")), o.str("quantity"), guid))
+            val guid = o.str("guid")
+            dao.saveMenuIngredient(MenuIngredient(
+                menuPositionId = menuIds.getValue(o.str("menuGuid")),
+                productId = productIds.getValue(o.str("productGuid")),
+                quantity = o.str("quantity"),
+                choiceGroup = o.optString("choiceGroup").ifBlank { guid },
+                guid = guid,
+            ))
         }
         val expenseDocIds = mutableMapOf<String, Long>()
         expenseDocs.filter { it.str("guid") in allowed }.forEach { o ->
@@ -133,7 +144,21 @@ class DataTransfer(private val database: AppDatabase) {
         val expenseItemIds = mutableMapOf<String, Long>()
         expenseItems.filter { it.str("guid") in allowed }.forEach { o ->
             val guid = o.str("guid"); val old = dao.expenseItemByGuid(guid)
-            dao.saveExpenseItem(ExpenseItem(old?.id ?: 0, expenseDocIds.getValue(o.str("documentGuid")), menuIds.getValue(o.str("menuGuid")), o.str("quantity"), paymentIds.getValue(o.str("paymentGuid")), o.optString("comment"), guid))
+            val importedChoices = o.optJSONObject("ingredientChoices")?.let { choices ->
+                choices.keys().asSequence().mapNotNull { group ->
+                    productIds[choices.optString(group)]?.let { group to it }
+                }.toMap()
+            }.orEmpty()
+            dao.saveExpenseItem(ExpenseItem(
+                id = old?.id ?: 0,
+                documentId = expenseDocIds.getValue(o.str("documentGuid")),
+                menuPositionId = menuIds.getValue(o.str("menuGuid")),
+                quantity = o.str("quantity"),
+                paymentMethodId = paymentIds.getValue(o.str("paymentGuid")),
+                comment = o.optString("comment"),
+                ingredientChoices = encodeChoices(importedChoices),
+                guid = guid,
+            ))
             expenseItemIds[guid] = dao.expenseItemByGuid(guid)!!.id
         }
         expenseItemIds.values.forEach { dao.deleteAllocations(it) }
@@ -172,3 +197,8 @@ private fun <T> List<T>.toJson(block: (T) -> JSONObject) = JSONArray().also { ar
 private fun JSONObject.array(name: String) = optJSONArray(name) ?: JSONArray()
 private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 private fun JSONObject.str(name: String) = getString(name)
+private fun encodeChoices(choices: Map<String, Long>) = choices.entries.joinToString(",") { "${it.key}:${it.value}" }
+private fun decodeChoices(value: String): Map<String, Long> = value.split(',').mapNotNull { pair ->
+    val parts = pair.split(':', limit = 2)
+    if (parts.size == 2) parts[1].toLongOrNull()?.let { parts[0] to it } else null
+}.toMap()

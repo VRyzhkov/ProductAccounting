@@ -73,6 +73,7 @@ data class MenuIngredient(
     val menuPositionId: Long,
     val productId: Long,
     val quantity: String,
+    @ColumnInfo(defaultValue = "''") val choiceGroup: String = newGuid(),
     @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
@@ -99,6 +100,8 @@ data class ExpenseItem(
     val quantity: String,
     val paymentMethodId: Long,
     val comment: String = "",
+    /** choice group GUID to selected product id, encoded as group:id pairs. */
+    @ColumnInfo(defaultValue = "''") val ingredientChoices: String = "",
     @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
