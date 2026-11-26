@@ -90,11 +90,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val payments = dao.allPaymentMethods().associateBy { it.id }
                 val lines = dao.getExpenseItems(documentId).map { item ->
                     val menu = menus[item.menuPositionId]
+                    val payment = payments[item.paymentMethodId]
+                    val itemQuantity = item.quantity.replace(',', '.').toBigDecimal()
+                    val total = if (payment?.reportValueType == "PURCHASE") {
+                        dao.getExpenseAllocationCosts(item.id).sumOf { allocation ->
+                            allocation.quantity.replace(',', '.').toBigDecimal() *
+                                BigDecimal.valueOf(allocation.unitPriceMinor, 2)
+                        }
+                    } else {
+                        itemQuantity * BigDecimal.valueOf(menu?.price ?: 0)
+                    }
                     ExpenseReportLine(
                         position = menu?.name ?: "Позиция не найдена",
                         quantity = item.quantity,
-                        price = menu?.price ?: 0,
-                        payment = payments[item.paymentMethodId]?.name ?: "Не указан",
+                        price = total.divide(itemQuantity, 2, RoundingMode.HALF_UP),
+                        total = total,
+                        payment = payment?.name ?: "Не указан",
                         comment = item.comment,
                     )
                 }
@@ -124,9 +135,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dao.updateProduct(id, name.trim(), unit.trim())
     }
 
-    fun addPaymentMethod(name: String) = launchAction("Способ оплаты добавлен") {
+    fun addPaymentMethod(name: String, reportValueType: String) = launchAction("Способ оплаты добавлен") {
         require(name.isNotBlank()) { "Укажите название способа оплаты" }
-        dao.insertPaymentMethod(PaymentMethod(name = name.trim()))
+        require(reportValueType in setOf("PURCHASE", "SALE")) { "Выберите способ расчёта отчёта" }
+        dao.insertPaymentMethod(PaymentMethod(name = name.trim(), reportValueType = reportValueType))
+    }
+
+    fun updatePaymentMethod(id: Long, name: String, reportValueType: String) = launchAction("Способ оплаты обновлён") {
+        require(name.isNotBlank()) { "Укажите название способа оплаты" }
+        require(reportValueType in setOf("PURCHASE", "SALE")) { "Выберите способ расчёта отчёта" }
+        dao.updatePaymentMethod(id, name.trim(), reportValueType)
     }
 
     fun addMenuPosition(name: String, price: String) = launchAction("Позиция меню добавлена") {

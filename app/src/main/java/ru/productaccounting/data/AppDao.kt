@@ -57,6 +57,9 @@ abstract class AppDao {
     @Insert
     abstract suspend fun insertPaymentMethod(method: PaymentMethod): Long
 
+    @Query("UPDATE payment_methods SET name = :name, reportValueType = :reportValueType WHERE id = :id")
+    abstract suspend fun updatePaymentMethod(id: Long, name: String, reportValueType: String)
+
     @Query("SELECT * FROM menu_positions ORDER BY id")
     abstract fun observeMenuPositions(): Flow<List<MenuPosition>>
 
@@ -169,6 +172,14 @@ abstract class AppDao {
 
     @Query("SELECT * FROM expense_items WHERE documentId = :documentId ORDER BY id")
     abstract suspend fun getExpenseItems(documentId: Long): List<ExpenseItem>
+
+    @Query("""
+        SELECT a.quantity, r.unitPriceMinor
+        FROM expense_allocations a
+        JOIN receipt_items r ON r.id = a.receiptItemId
+        WHERE a.expenseItemId = :expenseItemId
+    """)
+    abstract suspend fun getExpenseAllocationCosts(expenseItemId: Long): List<ExpenseAllocationCost>
 
     @Query("""
         SELECT r.id AS receiptItemId, r.quantity,

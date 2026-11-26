@@ -10,7 +10,8 @@ import java.math.BigDecimal
 data class ExpenseReportLine(
     val position: String,
     val quantity: String,
-    val price: Long,
+    val price: BigDecimal,
+    val total: BigDecimal,
     val payment: String,
     val comment: String,
 )
@@ -21,7 +22,7 @@ object ExpenseReportPdf {
         val regular = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(35, 35, 35); textSize = 10f; typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
         val bold = Paint(regular).apply { typeface = Typeface.create("sans-serif", Typeface.BOLD) }
         val muted = Paint(regular).apply { color = Color.rgb(95, 95, 95); textSize = 9f }
-        val totals = lines.groupBy { it.payment }.mapValues { (_, values) -> values.sumOf { it.total() } }.toSortedMap()
+        val totals = lines.groupBy { it.payment }.mapValues { (_, values) -> values.sumOf { it.total } }.toSortedMap()
         var pageNumber = 0
         var page: PdfDocument.Page? = null
         var y = 0f
@@ -58,8 +59,8 @@ object ExpenseReportPdf {
             canvas.drawText((index + 1).toString(), 40f, y, regular)
             canvas.drawText(line.position.fit(31), 65f, y, regular)
             canvas.drawText(line.quantity, 300f, y, regular)
-            canvas.drawText("${line.price} ₽", 345f, y, regular)
-            canvas.drawText("${line.total().plain()} ₽", 405f, y, regular)
+            canvas.drawText("${line.price.plain()} ₽", 345f, y, regular)
+            canvas.drawText("${line.total.plain()} ₽", 405f, y, regular)
             canvas.drawText(line.payment.fit(13), 475f, y, regular)
             y += 10f
             if (line.comment.isNotBlank()) {
@@ -88,7 +89,6 @@ object ExpenseReportPdf {
         pdf.close()
     }
 
-    private fun ExpenseReportLine.total() = quantity.replace(',', '.').toBigDecimal() * price.toBigDecimal()
     private fun BigDecimal.plain() = stripTrailingZeros().toPlainString()
     private fun String.fit(max: Int) = if (length <= max) this else take(max - 1) + "…"
 }

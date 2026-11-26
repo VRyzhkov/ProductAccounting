@@ -21,6 +21,7 @@ data class Product(
 data class PaymentMethod(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    @ColumnInfo(defaultValue = "'SALE'") val reportValueType: String = "SALE",
     @ColumnInfo(defaultValue = "''") val guid: String = newGuid(),
 )
 
@@ -125,3 +126,4 @@ data class ExpenseAllocation(
 data class ReceiptDocumentSummary(val id: Long, val guid: String, val date: String, val itemCount: Int)
 data class ExpenseDocumentSummary(val id: Long, val guid: String, val date: String, val itemCount: Int)
 data class ReceiptBatchBalance(val receiptItemId: Long, val quantity: String, val allocated: String?)
+data class ExpenseAllocationCost(val quantity: String, val unitPriceMinor: Long)

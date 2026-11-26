@@ -66,7 +66,7 @@ class DataTransfer(private val database: AppDatabase) {
             put("format", 1); put("section", section.route)
             put("roots", rootEntries.toJson { JSONObject().put("guid", it.guid).put("name", it.name) })
             put("products", chosenProducts.toJson { JSONObject().put("guid", it.guid).put("name", it.name).put("unit", it.unit) })
-            put("payments", chosenPayments.toJson { JSONObject().put("guid", it.guid).put("name", it.name) })
+            put("payments", chosenPayments.toJson { JSONObject().put("guid", it.guid).put("name", it.name).put("reportValueType", it.reportValueType) })
             put("receiptDocuments", chosenReceiptDocs.toJson { JSONObject().put("guid", it.guid).put("date", it.date) })
             put("receiptItems", chosenReceiptItems.toJson { JSONObject().put("guid", it.guid).put("documentGuid", receiptDocGuid.getValue(it.documentId)).put("productGuid", productGuid.getValue(it.productId)).put("quantity", it.quantity).put("unitPriceMinor", it.unitPriceMinor).put("totalCostMinor", it.totalCostMinor) })
             put("menuPositions", chosenMenus.toJson { JSONObject().put("guid", it.guid).put("name", it.name).put("price", it.price) })
@@ -108,7 +108,12 @@ class DataTransfer(private val database: AppDatabase) {
         val paymentIds = mutableMapOf<String, Long>()
         payments.filter { it.str("guid") in allowed }.forEach { o ->
             val guid = o.str("guid"); val old = dao.paymentByGuid(guid)
-            dao.savePaymentMethod(PaymentMethod(old?.id ?: 0, o.str("name"), guid)); paymentIds[guid] = dao.paymentByGuid(guid)!!.id
+            dao.savePaymentMethod(PaymentMethod(
+                id = old?.id ?: 0,
+                name = o.str("name"),
+                reportValueType = o.optString("reportValueType", "SALE"),
+                guid = guid,
+            )); paymentIds[guid] = dao.paymentByGuid(guid)!!.id
         }
         val receiptDocIds = mutableMapOf<String, Long>()
         receiptDocs.filter { it.str("guid") in allowed }.forEach { o ->

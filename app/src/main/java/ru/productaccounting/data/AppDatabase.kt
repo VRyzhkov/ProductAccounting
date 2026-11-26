@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ExpenseItem::class,
         ExpenseAllocation::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,7 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
             context,
             AppDatabase::class.java,
             "product-accounting.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -94,6 +94,12 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE menu_ingredients ADD COLUMN choiceGroup TEXT NOT NULL DEFAULT ''")
                 db.execSQL("UPDATE menu_ingredients SET choiceGroup = guid")
                 db.execSQL("ALTER TABLE expense_items ADD COLUMN ingredientChoices TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE payment_methods ADD COLUMN reportValueType TEXT NOT NULL DEFAULT 'SALE'")
             }
         }
     }

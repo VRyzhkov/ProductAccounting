@@ -282,16 +282,25 @@ private fun ProductsScreen(vm: MainViewModel) {
 private fun PaymentsScreen(vm: MainViewModel) {
     val methods by vm.paymentMethods.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
+    var editedMethod by remember { mutableStateOf<PaymentMethod?>(null) }
     EntityList(
         emptyText = null,
-        floatingAction = { FloatingActionButton(onClick = { showDialog = true }) { Icon(Icons.Default.Add, "Добавить") } },
+        floatingAction = { FloatingActionButton(onClick = { editedMethod = null; showDialog = true }) { Icon(Icons.Default.Add, "Добавить") } },
     ) {
         val sortedMethods = methods.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-        items(sortedMethods, key = { it.id }) { method -> ListCard(method.name) }
+        items(sortedMethods, key = { it.id }) { method ->
+            ListCard(
+                title = method.name,
+                subtitle = if (method.reportValueType == "PURCHASE") "В отчёте: закупочная стоимость" else "В отчёте: выходная стоимость",
+                onClick = { editedMethod = method; showDialog = true },
+            )
+        }
     }
     if (showDialog) {
-        OneFieldDialog("Новый способ оплаты", "Название", onDismiss = { showDialog = false }) {
-            vm.addPaymentMethod(it)
+        val method = editedMethod
+        PaymentMethodDialog(method, onDismiss = { showDialog = false }) { name, reportValueType ->
+            if (method == null) vm.addPaymentMethod(name, reportValueType)
+            else vm.updatePaymentMethod(method.id, name, reportValueType)
             showDialog = false
         }
     }
@@ -656,6 +665,38 @@ private fun OneFieldDialog(
         title = { Text(title) },
         text = { OutlinedTextField(value, { value = it }, label = { Text(label) }, singleLine = true) },
         confirmButton = { TextButton(onClick = { onSave(value) }) { Text("Сохранить") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
+
+@Composable
+private fun PaymentMethodDialog(
+    initial: PaymentMethod?,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
+    var reportValueType by remember(initial) { mutableStateOf(initial?.reportValueType ?: "SALE") }
+    val valueTypes = listOf(
+        "PURCHASE" to "Закупочная стоимость",
+        "SALE" to "Выходная стоимость",
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Новый способ оплаты" else "Редактирование способа оплаты") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Название") }, singleLine = true)
+                ChoiceField(
+                    label = "Итоговая сумма в отчёте",
+                    values = valueTypes,
+                    selectedId = if (reportValueType == "PURCHASE") 0L else 1L,
+                    id = { if (it.first == "PURCHASE") 0L else 1L },
+                    name = { it.second },
+                ) { selected -> reportValueType = if (selected == 0L) "PURCHASE" else "SALE" }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(name, reportValueType) }) { Text("Сохранить") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }
